@@ -1,0 +1,3 @@
+kofu_west: https://overpass-api.de/api/interpreter try0 failed HTTP Error 504: Gateway Timeout
+kofu_west: https://overpass-api.de/api/interpreter try1 failed HTTP Error 504: Gateway Timeout
+kofu_west: 2376851 bytes from https://overpass.private.coffee/api/interpreter

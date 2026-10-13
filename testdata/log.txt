@@ -23,3 +23,14 @@ around_test: https://overpass.private.coffee/api/interpreter try0 failed The rea
 around_test: https://overpass.private.coffee/api/interpreter try1 failed HTTP Error 504: Gateway Timeout
 around_test: https://maps.mail.ru/osm/tools/overpass/api/interpreter try0 failed HTTP Error 504: Gateway Time-out
 around_test: 16008 bytes from https://maps.mail.ru/osm/tools/overpass/api/interpreter
+CORS https://overpass-api.de/api/interpreter
+HTTP/1.1 406 Not Acceptable
+CORS https://overpass.private.coffee/api/interpreter
+
+CORS https://maps.mail.ru/osm/tools/overpass/api/interpreter
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: *
+Access-Control-Max-Age: 600
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Authorization, Content-Type, X-Maps-Platform, X-Maps-Access-Token
+Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT

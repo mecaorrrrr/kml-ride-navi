@@ -10,3 +10,4 @@ mw_01: https://overpass-api.de/api/interpreter try1 failed HTTP Error 504: Gatew
 mw_01: https://overpass.private.coffee/api/interpreter try0 failed The read operation timed out
 mw_01: https://overpass.private.coffee/api/interpreter try1 failed HTTP Error 504: Gateway Timeout
 mw_01: 901284 bytes from https://maps.mail.ru/osm/tools/overpass/api/interpreter
+mw_02: 1780776 bytes from https://overpass-api.de/api/interpreter

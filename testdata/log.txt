@@ -5,3 +5,8 @@ azumino: 3236228 bytes from https://overpass-api.de/api/interpreter
 hakuba: 293023 bytes from https://overpass-api.de/api/interpreter
 gunma_north: 1056456 bytes from https://overpass-api.de/api/interpreter
 mw_00: 761258 bytes from https://overpass-api.de/api/interpreter
+mw_01: https://overpass-api.de/api/interpreter try0 failed HTTP Error 504: Gateway Timeout
+mw_01: https://overpass-api.de/api/interpreter try1 failed HTTP Error 504: Gateway Timeout
+mw_01: https://overpass.private.coffee/api/interpreter try0 failed The read operation timed out
+mw_01: https://overpass.private.coffee/api/interpreter try1 failed HTTP Error 504: Gateway Timeout
+mw_01: 901284 bytes from https://maps.mail.ru/osm/tools/overpass/api/interpreter

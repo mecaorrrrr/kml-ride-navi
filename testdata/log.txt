@@ -3,3 +3,4 @@ kofu_west: https://overpass-api.de/api/interpreter try1 failed HTTP Error 504: G
 kofu_west: 2376851 bytes from https://overpass.private.coffee/api/interpreter
 azumino: 3236228 bytes from https://overpass-api.de/api/interpreter
 hakuba: 293023 bytes from https://overpass-api.de/api/interpreter
+gunma_north: 1056456 bytes from https://overpass-api.de/api/interpreter

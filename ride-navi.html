@@ -61,10 +61,12 @@ body.night .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85
 
 /* 下部メーター */
 #bar{display:flex;align-items:stretch;gap:8px;padding:8px 12px calc(env(safe-area-inset-bottom,0px) + 8px);background:var(--panel);border-top:1px solid var(--line)}
-.stat{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
-.stat b{font-family:var(--num);font-weight:700;font-size:38px;line-height:1;font-variant-numeric:tabular-nums}
+.stat{flex:1 1 0;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.stat:first-child{flex-grow:.8}
+.stat:nth-child(3){flex-grow:1.3}
+.stat b{font-family:var(--num);font-weight:700;font-size:clamp(22px,7vw,38px);line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
 .stat span{font-size:11px;color:var(--muted);letter-spacing:.06em;margin-top:2px}
-.btn{flex:0 0 64px;border-radius:12px;background:#232931;font-size:13px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.btn{flex:0 0 58px;border-radius:12px;background:#232931;font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;white-space:nowrap}
 .btn.on{background:var(--accent);color:var(--accent-ink)}
 
 /* メニュー */
@@ -83,7 +85,13 @@ body.night .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85
 .leg b{min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .leg.on{border-color:var(--accent);background:#2a2416}
 .leg.on span{color:var(--accent)}
-.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.road{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;line-height:1.6;color:var(--muted)}
+.road span{flex:1 1 200px;min-width:0}
+.road span.ok{color:var(--ok)}
+.road span.err{color:var(--off)}
+.road span.busy{color:var(--accent)}
+.mini{padding:10px 14px;border-radius:10px;background:#262d36;font-size:14px;font-weight:700}
 .sum div{background:#20262d;border-radius:10px;padding:10px}
 .sum b{display:block;font-family:var(--num);font-size:28px;font-variant-numeric:tabular-nums}
 .sum span{font-size:11px;color:var(--muted)}
@@ -94,6 +102,28 @@ body.night .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85
 #msg{font-size:13px;color:var(--off);min-height:1em}
 #msg.ok{color:var(--ok)}
 input[type=file]{display:none}
+/* 横画面：左に案内とメーター、右に地図 */
+@media (orientation:landscape) and (max-height:560px){
+  #app{display:grid;grid-template-columns:minmax(260px,34%) 1fr;grid-template-rows:1fr auto;grid-template-areas:"man map" "bar map"}
+  #man{grid-area:man;min-height:0;gap:12px;border-bottom:0;border-right:1px solid var(--line);padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 10px calc(env(safe-area-inset-left,0px) + 12px)}
+  #arrowBox{flex-basis:76px;height:76px;border-radius:12px}
+  #arrowBox svg{width:66px;height:66px}
+  #mdist{font-size:52px}
+  #mdist small{font-size:22px}
+  #mlabel{font-size:19px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  #mnext{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  #mapWrap{grid-area:map}
+  #bar{grid-area:bar;display:grid;grid-template-columns:.8fr 1fr 1.3fr;gap:6px 8px;border-right:1px solid var(--line);padding:8px 10px calc(env(safe-area-inset-bottom,0px) + 8px) calc(env(safe-area-inset-left,0px) + 12px)}
+  .stat b{font-size:clamp(22px,3.6vw,30px)}
+  .btn{min-height:46px;flex-direction:row;gap:4px}
+  .btn br{display:none}
+  #voiceBtn{grid-column:1/2}
+  #menuBtn{grid-column:2/4}
+  #recenter{right:calc(env(safe-area-inset-right,0px) + 12px)}
+  .leaflet-bottom.leaflet-right{margin-right:env(safe-area-inset-right,0px)}
+  #sheet{align-items:center;padding:8px calc(env(safe-area-inset-right,0px) + 8px) 8px calc(env(safe-area-inset-left,0px) + 8px)}
+  .card{max-width:680px;max-height:100%;border-radius:20px;padding-bottom:20px}
+}
 @media (prefers-reduced-motion:reduce){.rider svg,#man{transition:none}}
 </style>
 </head>
@@ -128,6 +158,7 @@ input[type=file]{display:none}
       <li>マイマップの共有リンクをSafariで開き、URLの <b>viewer</b> を <b>kml</b> に変えて末尾に <b>&amp;forcekml=1</b> を付けて開く</li>
       <li>ダウンロードされたKMLを、下の「ルートを開く」で読み込む</li>
       <li>日ごとにルートが分かれている場合は、走る日を選ぶ</li>
+      <li>選ぶと<b>道路データ</b>（信号・分岐・IC名）を自動で取得して端末に保存します。出発前に電波の良い所で済ませておくと、圏外でも使えます</li>
     </ol>
     <input type="file" id="file">
     <div class="row">
@@ -140,9 +171,11 @@ input[type=file]{display:none}
       <div id="legs"></div>
       <div class="sum">
         <div><b id="sDist">0</b><span>距離 km</span></div>
-        <div><b id="sTurn">0</b><span>曲がり角</span></div>
+        <div><b id="sTurn">0</b><span>案内地点</span></div>
+        <div><b id="sSig">—</b><span>信号</span></div>
         <div><b id="sWp">0</b><span>経由地</span></div>
       </div>
+      <div class="road"><span id="roadStat"></span><button class="mini" id="roadBtn" hidden>道路データを取得</button></div>
     </div>
     <button class="big primary" id="startBtn" disabled>ナビ開始</button>
     <div class="row">
@@ -253,7 +286,7 @@ function joinLines(lines){
 }
 
 /* ---------- ルート解析 ---------- */
-function turnText(a){const s=a>0?'右':'左';const x=Math.abs(a);if(x<55)return 'やや'+s;if(x<135)return s;return '大きく'+s;}
+function turnText(a){const s=a>0?'右':'左';const x=Math.abs(a);if(x<55)return 'やや'+s;if(x<135)return s;if(x<165)return '大きく'+s;return 'Uターン';}
 // 交差点で曲がる所は向きの変化が十数mに集中し、山道のカーブは長い距離に分散する。
 // 集中している曲がりだけを案内し、カーブは案内しない。
 function buildRoute(pts,rawWps,name){
@@ -301,30 +334,382 @@ function buildRoute(pts,rawWps,name){
     wps.push({lat:w.lat,lng:w.lng,name,score,d:along});
   }
   wps.sort((a,b)=>a.d-b.d);
-  return {name,pts,cum,total,turns,wps};
+  // 道路データが無いときは、線の形から見つけた交差点らしい曲がりだけで案内する
+  const geo=turns.filter(t=>t.voice).map(t=>({...t,kind:'turn',side:t.ang<0?-1:1,src:'geo'}));
+  geo.forEach((t,k)=>t.idx=k);
+  return {name,pts,cum,total,res,geo,turns:geo,signals:[],roads:null,wps};
 }
+
+/* ---------- 道路データ（OpenStreetMap）で交差点・信号・ICを読み解く ---------- */
+const HW_OK=new Set(['motorway','trunk','primary','secondary','tertiary','unclassified','residential','living_street','road','service','motorway_link','trunk_link','primary_link','secondary_link','tertiary_link']);
+const isLink=h=>/_link$/.test(h||'');
+const isMinor=h=>h==='service'||h==='living_street';
+const RANK={motorway:1,trunk:2,primary:3,secondary:4,tertiary:5,unclassified:6,road:6,residential:7,living_street:8,service:8};
+const rank=h=>RANK[(h||'').replace(/_link$/,'')]||9;
+function onewayOf(t){
+  const o=t.oneway;
+  if(o==='yes'||o==='true'||o==='1') return 1;
+  if(o==='-1'||o==='reverse') return -1;
+  if(o==='no') return 0;
+  if(t.highway==='motorway'||t.highway==='motorway_link'||t.junction==='roundabout') return 1;
+  return 0;
+}
+function sameRoad(a,b){return a===b||(!!a.t.ref&&a.t.ref===b.t.ref)||(!!a.t.name&&a.t.name===b.t.name);}
+function pickTags(t,keys){const o={};for(const k of keys) if(t[k]!=null) o[k]=t[k];return o;}
+function compactOSM(json,into){
+  into=into||{ways:new Map(),nodes:new Map()};
+  for(const e of json.elements||[]){
+    if(e.type==='way'&&e.nodes&&e.geometry&&e.geometry.length===e.nodes.length&&!e.geometry.some(p=>!p)){
+      if(!into.ways.has(e.id)) into.ways.set(e.id,{id:e.id,n:e.nodes,g:e.geometry.map(p=>[+p.lat.toFixed(6),+p.lon.toFixed(6)]),t:pickTags(e.tags||{},['highway','oneway','junction','name','ref','destination','destination:ref'])});
+    }else if(e.type==='node'&&e.tags){
+      if(!into.nodes.has(e.id)) into.nodes.set(e.id,{id:e.id,lat:e.lat,lng:e.lon,t:pickTags(e.tags,['highway','name','junction'])});
+    }
+  }
+  return into;
+}
+function analyzeRoads(R,osm){
+  const res=R.res,N=res.length,STEP=5;
+  const at=x=>res[Math.max(0,Math.min(N-1,Math.round(x/STEP)))];
+  const W=osm.ways.filter(w=>HW_OK.has(w.t.highway)&&w.n.length>1);
+  const npos=new Map(),nEdges=new Map(),tagged=new Map();
+  for(const n of osm.nodes) tagged.set(n.id,n);
+  for(const w of W){
+    w.ow=onewayOf(w.t);
+    for(let i=0;i<w.n.length;i++){
+      const id=w.n[i];
+      if(!npos.has(id)) npos.set(id,{lat:w.g[i][0],lng:w.g[i][1]});
+      let a=nEdges.get(id);if(!a) nEdges.set(id,a=[]);
+      if(i>0) a.push({w,i,dir:-1});
+      if(i<w.n.length-1) a.push({w,i,dir:1});
+    }
+  }
+  const pt=(w,i)=>({lat:w.g[i][0],lng:w.g[i][1]});
+  // 道路の線分を格子に登録して、近くの道をすばやく探す
+  const C=0.0004,grid=new Map(),gk=(x,y)=>x+','+y;
+  for(const w of W) for(let i=0;i<w.g.length-1;i++){
+    const [a1,o1]=w.g[i],[a2,o2]=w.g[i+1];
+    for(let x=Math.floor(Math.min(o1,o2)/C);x<=Math.floor(Math.max(o1,o2)/C);x++)
+      for(let y=Math.floor(Math.min(a1,a2)/C);y<=Math.floor(Math.max(a1,a2)/C);y++){
+        const k=gk(x,y);let c=grid.get(k);if(!c) grid.set(k,c=[]);c.push({w,i});
+      }
+  }
+  // ルートの各点を、向きの合う一番近い道に対応づける
+  const M=new Array(N);let prevW=null;
+  for(let k=0;k<N;k++){
+    const p=res[k],b=brg(res[Math.max(0,k-3)],res[Math.min(N-1,k+3)]);
+    const cx=Math.floor(p.lng/C),cy=Math.floor(p.lat/C);let best=null;
+    for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++){
+      const cell=grid.get(gk(cx+dx,cy+dy));if(!cell) continue;
+      for(const s of cell){
+        const a=pt(s.w,s.i),c=pt(s.w,s.i+1),r=projSeg(p,a,c);
+        if(r.d>22) continue;
+        const sb=brg(a,c);let h;
+        if(s.w.ow===1) h=Math.abs(ndiff(sb-b));
+        else if(s.w.ow===-1) h=Math.abs(ndiff(sb+180-b));
+        else{h=Math.abs(ndiff(sb-b));if(h>90)h=180-h;}
+        if(h>50) continue;
+        const score=r.d+h*0.25-(s.w===prevW?4:0);
+        if(!best||score<best.score) best={w:s.w,i:s.i,d:r.d,score};
+      }
+    }
+    M[k]=best;if(best) prevW=best.w;
+  }
+  for(let k=1;k<N-1;k++) if(M[k]&&M[k-1]&&M[k+1]&&M[k-1].w===M[k+1].w&&M[k].w!==M[k-1].w) M[k]={...M[k-1]};
+  const matched=new Set();let mc=0;
+  for(const m of M) if(m){matched.add(m.w);mc++;}
+  // 道どうしがつながっていない所（地図の不備）を記録しておく
+  const gaps=[];
+  for(let k=1;k<N;k++){
+    const a=M[k-1],b=M[k];if(!a||!b||a.w===b.w) continue;
+    const s=new Set(a.w.n);if(!b.w.n.some(id=>s.has(id)&&dist(npos.get(id),res[k])<60)) gaps.push(res[k].d);
+  }
+  // ルートが通る分岐点（3方向以上に道が出ているノード）を集める。往復する道は通るたびに別扱い
+  const occ=new Map();
+  for(let k=0;k<N;k++){
+    const m=M[k];if(!m) continue;
+    for(const id of [m.w.n[m.i],m.w.n[m.i+1]]){
+      if((nEdges.get(id)||[]).length<3) continue;
+      const dd=dist(npos.get(id),res[k]);
+      let list=occ.get(id);if(!list) occ.set(id,list=[]);
+      const last=list[list.length-1];
+      if(last&&k-last.lastK<=40){last.lastK=k;if(dd<last.dd){last.dd=dd;last.k=k;}}
+      else list.push({k,dd,lastK:k});
+    }
+  }
+  const edgeBrg=(J,e)=>{
+    const g=e.w.g;let j=e.i,acc=0,prev=pt(e.w,j),q=prev;
+    for(;;){const nj=j+e.dir;if(nj<0||nj>=g.length) break;q=pt(e.w,nj);acc+=dist(prev,q);prev=q;j=nj;if(acc>=20) break;}
+    return brg(J,q);
+  };
+  // 道を分岐点からたどった線と、ルートの前（sgn=1）または後ろ（-1）の線とのずれ。
+  // 手前100mのずれを主に見て、高速の出口のように浅い角度で分かれる所は100〜250m先のずれで見分ける
+  const edgeFit=(J,e,D,sgn)=>{
+    const path=[{lat:J.lat,lng:J.lng}],ws=new Set([e.w]);let cur=e,j=e.i,acc=0;
+    for(let guard=0;guard<800;guard++){
+      const nj=j+cur.dir;
+      if(nj<0||nj>=cur.w.g.length){
+        // 道の終点で、続く道が1本だけならそのままたどる（ランプが複数の道に分かれて登録されている場合）
+        const nid=cur.w.n[j],nx=(nEdges.get(nid)||[]).filter(x=>x.w!==cur.w&&(sgn>0?canOut(x):canIn(x)));
+        if(nx.length!==1) break;cur=nx[0];j=cur.i;ws.add(cur.w);continue;
+      }
+      const q=pt(cur.w,nj);acc+=dist(path[path.length-1],q);path.push(q);j=nj;if(acc>=400) break;
+    }
+    if(acc<8) return {f1:99,f2:99,ws};
+    const md=x=>{const p=at(D+sgn*x);let m=1e9;for(let i=0;i<path.length-1;i++){const r=projSeg(p,path[i],path[i+1]);if(r.d<m)m=r.d;}return m;};
+    let s1=0,n1=0,s2=0,n2=0;
+    for(let x=10;x<=Math.min(100,acc);x+=10){s1+=md(x);n1++;}
+    for(let x=110;x<=Math.min(250,acc);x+=20){s2+=Math.min(30,md(x));n2++;}
+    return {f1:n1?s1/n1:99,f2:n2?s2/n2:(n1?s1/n1:99),ws};
+  };
+  const reach=(e,maxLen)=>{
+    const ids=new Set();let cur=e,j=e.i,acc=0;
+    for(let guard=0;guard<2000;guard++){
+      const nj=j+cur.dir;
+      if(nj<0||nj>=cur.w.g.length){const nid=cur.w.n[j],nx=(nEdges.get(nid)||[]).filter(x=>x.w!==cur.w&&canOut(x));if(!nx.length) break;
+        // 合流先が本線なら本線側を、1本ならそれをたどる
+        cur=nx.length===1?nx[0]:nx.sort((a,b)=>rank(a.w.t.highway)-rank(b.w.t.highway))[0];j=cur.i;continue;}
+      acc+=dist(pt(cur.w,j),pt(cur.w,nj));j=nj;ids.add(cur.w.n[j]);if(acc>=maxLen) break;
+    }
+    return ids;
+  };
+  const rejoin=(a,b)=>{const A=reach(a,1500);for(const id of reach(b,1500)) if(A.has(id)) return true;return false;};
+  const canOut=e=>e.w.ow===0||e.w.ow===e.dir;
+  const canIn=e=>e.w.ow===0||e.w.ow===-e.dir;
+  const dec=[],unreliable=[],junctionD=new Map();
+  for(const [id,list] of occ) for(const o of list){
+    if(o.dd>20) continue;
+    const J=npos.get(id),D=res[o.k].d;
+    if(D<30||D>R.total-30) continue;
+    let jl=junctionD.get(id);if(!jl) junctionD.set(id,jl=[]);jl.push(D);
+    const inB=brg(at(D-30),at(D-5)),outB=brg(at(D+5),at(D+30));
+    const edges=nEdges.get(id).map(e=>({e,b:edgeBrg(J,e)}));
+    // 入ってきた道・出ていく道は、前後100mのルートの線に一番よく重なる道を選ぶ（浅い角度の分岐でも取り違えない）
+
+    // 地図との対応づけで、分岐点からいちばん遠くまでルートが乗っていた道を優先する
+    const pick=(cands,from,to,step)=>{for(let k=from;step>0?k<=to:k>=to;k+=step){const m=M[k];if(!m) continue;const h=cands.filter(c=>c.f.ws.has(m.w));if(h.length===1) return h[0];if(h.length>1) return null;}return null;};
+    const score=x=>x.f.f1+0.4*x.f.f2+x.v*0.05;
+    const ci=[],co=[];
+    for(const x of edges){if(!canIn(x.e)) continue;const v=Math.abs(ndiff(x.b+180-inB));if(v>=60) continue;const f=edgeFit(J,x.e,D,-1);if(f.f1<=15) ci.push({...x,v,f});}
+    let ein=pick(ci,Math.max(0,o.k-80),o.k-1,1)||ci.sort((a,b)=>score(a)-score(b))[0]||null;
+    for(const x of edges){if(!canOut(x.e)||(ein&&x.e===ein.e)) continue;const v=Math.abs(ndiff(x.b-outB));if(v>=60) continue;const f=edgeFit(J,x.e,D,1);if(f.f1<=15) co.push({...x,v,f});}
+    let eout=pick(co,Math.min(N-1,o.k+80),o.k+1,-1)||co.sort((a,b)=>score(a)-score(b))[0]||null;
+    if(!ein||!eout){unreliable.push(D);continue;}
+    const arrive=ein.b+180,ang=ndiff(eout.b-arrive);
+    const inW=ein.e.w,outW=eout.e.w,inH=inW.t.highway,outH=outW.t.highway;
+    const alts=edges.filter(x=>x.e!==ein.e&&x.e!==eout.e&&canOut(x.e)).map(x=>({w:x.e.w,e:x.e,a:ndiff(x.b-arrive)})).filter(x=>Math.abs(x.a)<=150);
+    const real=alts.filter(x=>!isMinor(x.w.t.highway)||isMinor(outH));
+    
+    if(!real.length) continue;
+    const same=sameRoad(inW,outW);
+    const comp=real.filter(x=>Math.abs(x.a)<60).sort((x,y)=>Math.abs(x.a-ang)-Math.abs(y.a-ang))[0];
+    let kind=null,side=comp?(ang<comp.a?-1:1):(ang<0?-1:1);
+    if(Math.abs(ang)>=50) {kind='turn';side=ang<0?-1:1;}
+    else if(comp){
+      // ルートが一番まっすぐな道なら「道なり」。まっすぐでない方へ入るか、同じくらいの角度で分かれる別の道へ入るときだけ案内する
+      const minA=Math.min(...real.filter(x=>Math.abs(x.a)<60).map(x=>Math.abs(x.a)));
+      const straightest=Math.abs(ang)<=minA+5,fork=Math.abs(comp.a-ang)<30;
+      // 格上の道（国道→市道など）をそのまま進むなら、ゆるい曲がりや細い道の分岐は案内しない
+      const major=rank(outH)<rank(comp.w.t.highway);
+      // 本線をそのまま進むとき（出口ランプの横を通過するだけ）は案内しない
+      const passRamp=same&&!isLink(outH)&&isLink(comp.w.t.highway)&&Math.abs(ang)<35;
+      if(passRamp||(major&&(straightest||Math.abs(ang)<30))) kind=null;
+      else if(!straightest||(fork&&!same)) kind='keep';
+    }
+    if(inH==='motorway'&&isLink(outH)){
+      // 降りた先がまた高速道路ならJCT、一般道ならIC出口
+      kind='exit';
+      let onLink=false;
+      for(let k=o.k;k<N&&res[k].d<D+6000;k++){const h=M[k]&&M[k].w.t.highway;if(!h) continue;if(isLink(h)){onLink=true;continue;}if(!onLink) continue;if(h==='motorway') kind='jct';break;}
+    }
+    else if(isLink(outH)&&!isLink(inH)&&(outH==='motorway_link'||outH==='trunk_link')&&inH!=='trunk') kind=kind?'entry':null;
+    // 料金所や車線の分かれ目のように、すぐ先でまた合流する分岐は案内しない
+    if(kind==='keep'&&comp&&rejoin(eout.e,comp.e)) kind=null;
+    if(kind==='keep'&&((inH==='motorway'&&outH==='motorway')||(isLink(inH)&&isLink(outH))||(inH==='motorway_link'&&outH==='motorway'))) kind='jct';
+    if(!kind) continue;
+    const sideRoad=kind==='keep'&&(isLink(outH)||/側道/.test(outW.t.name||''));
+    dec.push({d:D,lat:J.lat,lng:J.lng,kind,ang,side,sideRoad,node:id,outW,inH,outH});
+  }
+  // 信号：ルート上の道にあるもの、またはルートの分岐点から45m以内（交差道路側の信号）にあるもの
+  const sigs=[];
+  for(const n of osm.nodes){
+    if(n.t.highway!=='traffic_signals') continue;
+    const es=nEdges.get(n.id);if(!es) continue;
+    if(es.some(e=>matched.has(e.w))){
+      // ルートの近くを通る回ごとに数える
+      const passes=[];
+      for(let k=0;k<N;k++){const m=M[k];if(!m||(m.w.n[m.i]!==n.id&&m.w.n[m.i+1]!==n.id)) continue;
+        const dd=dist(n,res[k]),p=passes[passes.length-1];
+        if(!p||k-p.last>40) passes.push({k,dd,last:k});else{p.last=k;if(dd<p.dd){p.dd=dd;p.k=k;}}}
+      for(const p of passes) if(p.dd<25) sigs.push(res[p.k].d);
+      if(passes.length) continue;
+    }
+    // 交差道路側の信号は、道をたどって近くのルート分岐点を探す
+    const seen=new Set([n.id]);let front=[{id:n.id,acc:0}];
+    while(front.length){
+      const nx=[];
+      for(const f of front){
+        if(junctionD.has(f.id)&&f.id!==n.id){for(const D of junctionD.get(f.id)) sigs.push(D);continue;}
+        for(const e of nEdges.get(f.id)||[]){
+          const j=e.i+e.dir;if(j<0||j>=e.w.n.length) continue;const id2=e.w.n[j];
+          if(seen.has(id2)) continue;seen.add(id2);
+          const acc=f.acc+dist(npos.get(f.id),npos.get(id2));if(acc<=45) nx.push({id:id2,acc});
+        }
+      }
+      front=nx;
+    }
+  }
+  sigs.sort((a,b)=>a-b);
+  const signals=[];
+  for(const s of sigs){if(signals.length&&s-signals[signals.length-1]<45) continue;signals.push(s);}
+  // ICやJCTの名前（高速道路の分岐ノード）をルート上の距離に置く
+  const icNames=[];
+  for(const n of osm.nodes){
+    if(n.t.highway!=='motorway_junction'||!n.t.name) continue;
+    let lastK=-99;
+    for(let k=0;k<N;k+=2){if(dist(n,res[k])<40){if(k-lastK>60) icNames.push({d:res[k].d,name:n.t.name});lastK=k;}}
+  }
+  const nameNear=(n,radius)=>{for(const x of osm.nodes){if(!x.t.name||x.t.highway==='motorway_junction') continue;if((x.t.highway==='traffic_signals'||x.t.junction==='yes')&&dist(x,n)<radius) return x.t.name;}return '';};
+  for(const x of dec){
+    const t=tagged.get(x.node);
+    if(x.kind==='exit'||x.kind==='jct'||x.kind==='entry'){
+      if(t&&t.t.highway==='motorway_junction'&&t.t.name) x.name=t.t.name;
+      else{
+        const lo=x.kind==='entry'?x.d-100:x.d-800,hi=x.kind==='entry'?x.d+1500:x.d+300;
+        const c=icNames.filter(n=>n.d>=lo&&n.d<=hi).sort((a,b)=>Math.abs(a.d-x.d)-Math.abs(b.d-x.d))[0];
+        if(c) x.name=c.name;else if(/IC|インター/i.test((x.outW.t.name||'').normalize('NFKC'))) x.name=x.outW.t.name;
+      }
+      if(x.name) x.name=x.name.normalize('NFKC');
+      const dest=(x.outW.t.destination||x.outW.t['destination:ref']||'').split(';').map(s=>s.trim()).filter(Boolean).slice(0,2);
+      if(dest.length) x.dest=dest.join('・');
+    }else{
+      x.xname=((t&&t.t.name&&t.t.highway!=='motorway_junction')?t.t.name:nameNear(x,35)).normalize('NFKC');
+    }
+  }
+  // 側道に入る分岐が実は曲がり角（左折レーンなど）なら「曲がる」として扱う
+  for(const x of dec){
+    if(x.kind!=='keep'||isLink(x.outH)) continue;
+    const m=ndiff(brg(at(x.d+20),at(x.d+80))-brg(at(x.d-60),at(x.d-10)));
+    if(Math.abs(m)>=60){x.kind='turn';x.ang=m;x.side=m<0?-1:1;x.sideRoad=false;}
+  }
+  // 近すぎる案内（中央分離帯のある交差点など）は1つにまとめる
+  dec.sort((a,b)=>a.d-b.d);
+  const pri={exit:3,jct:3,entry:3,turn:2,keep:1};
+  const merged=[];
+  for(const x of dec){
+    const p=merged[merged.length-1];
+    if(p&&x.d-p.d<40){
+      if(pri[x.kind]>pri[p.kind]) Object.assign(p,{...x,d:p.d,lat:p.lat,lng:p.lng});
+      else if(p.kind==='turn'&&x.kind==='turn'){const a=ndiff(brg(at(x.d+5),at(x.d+40))-brg(at(p.d-40),at(p.d-5)));p.ang=a;p.side=a<0?-1:1;}
+      if(!p.xname&&x.xname) p.xname=x.xname;
+      continue;
+    }
+    merged.push(x);
+  }
+  // 道路データで確認できない区間は、線の形から見つけた曲がり角を残す
+  for(const g of R.geo){
+    if(merged.some(x=>Math.abs(x.d-g.d)<60)) continue;
+    const k=Math.round(g.d/STEP);let m=0,n=0;
+    for(let j=Math.max(0,k-12);j<=Math.min(N-1,k+12);j++){n++;if(M[j])m++;}
+    const uturn=Math.abs(g.ang)>=150&&R.wps.some(w=>Math.abs(w.d-g.d)<400);
+    if(!uturn&&n&&m/n>=0.6&&!unreliable.some(u=>Math.abs(u-g.d)<50)&&!gaps.some(u=>Math.abs(u-g.d)<60)) continue;
+    merged.push({...g});
+  }
+  merged.sort((a,b)=>a.d-b.d);
+  for(const x of merged){x.sig=signals.some(s=>Math.abs(s-x.d)<=35);delete x.outW;}
+  merged.forEach((t,k)=>t.idx=k);
+  return {debug:{M,unreliable,gaps,occ,npos,nEdges},turns:merged,signals,stats:{cover:N?mc/N:0,signals:signals.length,turns:merged.length,ic:merged.filter(x=>x.kind==='exit'||x.kind==='jct'||x.kind==='entry').length}};
+}
+
+/* ---------- 道路データの取得と保存 ---------- */
+const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+const HWQ='^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$';
+function simplify(pts,tol){
+  if(pts.length<3) return pts.slice();
+  const keep=new Uint8Array(pts.length);keep[0]=keep[pts.length-1]=1;
+  const stack=[[0,pts.length-1]];
+  while(stack.length){
+    const [a,b]=stack.pop();let md=0,mi=-1;
+    for(let i=a+1;i<b;i++){const d=projSeg(pts[i],pts[a],pts[b]).d;if(d>md){md=d;mi=i;}}
+    if(md>tol){keep[mi]=1;stack.push([a,mi],[mi,b]);}
+  }
+  return pts.filter((_,i)=>keep[i]);
+}
+function roadQuery(chunk){
+  const pl=chunk.map(p=>p.lat.toFixed(5)+','+p.lng.toFixed(5)).join(',');
+  return `[out:json][timeout:120];way(around:35,${pl})[highway~"${HWQ}"][service!~"^(parking_aisle|driveway|drive-through)$"];out body geom;`+
+    `node(around:45,${pl})[highway~"^(traffic_signals|motorway_junction)$"];out body;node(around:45,${pl})[junction=yes][name];out body;`;
+}
+async function overpass(q){
+  let lastErr=null;
+  // 公開サーバーは混むと504を返すので、サーバーを替えながら間を空けて3巡まで試す
+  for(let round=0;round<3;round++){
+    for(const ep of OVERPASS){
+      try{
+        const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),120000);
+        const r=await fetch(ep,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl.signal});
+        clearTimeout(tm);
+        if(r.ok) return await r.json();
+        lastErr=new Error('HTTP '+r.status);
+      }catch(e){lastErr=e;}
+    }
+    await new Promise(s=>setTimeout(s,[3000,10000,0][round]));
+  }
+  throw lastErr||new Error('取得失敗');
+}
+function roadChunks(pts){
+  const s=simplify(pts,8),chunks=[];
+  for(let i=0;i<s.length-1;i+=120) chunks.push(s.slice(i,Math.min(s.length,i+121)));
+  return chunks;
+}
+// prevに前回の結果があれば、取れなかった区間だけを取り直す
+async function fetchRoadData(pts,onProg,prev,alive){
+  const chunks=roadChunks(pts);
+  const reuse=prev&&prev.done&&prev.done.length===chunks.length;
+  const acc={ways:new Map(),nodes:new Map()};
+  if(reuse){for(const w of prev.ways) acc.ways.set(w.id,w);for(const n of prev.nodes) acc.nodes.set(n.id,n);}
+  const done=reuse?prev.done.slice():chunks.map(()=>false);
+  for(let i=0;i<chunks.length;i++){
+    onProg(done.filter(Boolean).length,chunks.length);
+    if(done[i]) continue;
+    if(alive&&!alive()) throw new Error('cancel');
+    try{compactOSM(await overpass(roadQuery(chunks[i])),acc);done[i]=true;}catch(e){}
+  }
+  onProg(done.filter(Boolean).length,chunks.length);
+  const failed=done.filter(x=>!x).length;
+  if(failed===chunks.length) throw new Error('取得失敗');
+  return {v:1,at:Date.now(),done,failed,chunks:chunks.length,ways:[...acc.ways.values()],nodes:[...acc.nodes.values()]};
+}
+const idb=(()=>{
+  let p=null;
+  const open=()=>p||(p=new Promise((res,rej)=>{try{const r=indexedDB.open('ride-navi',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}catch(e){rej(e);}}));
+  const run=async(mode,fn)=>{const db=await open();return new Promise((res,rej)=>{const t=db.transaction('kv',mode),q=fn(t.objectStore('kv'));t.oncomplete=()=>res(q.result);t.onerror=()=>rej(t.error);});};
+  return {get:k=>run('readonly',s=>s.get(k)).catch(()=>null),set:(k,v)=>run('readwrite',s=>s.put(v,k)).then(()=>true).catch(()=>false)};
+})();
+function legKey(l){let h=2166136261;const step=Math.max(1,Math.floor(l.pts.length/400));for(let i=0;i<l.pts.length;i+=step){h=Math.imul(h^((l.pts[i].lat*1e5)|0),16777619);h=Math.imul(h^((l.pts[i].lng*1e5)|0),16777619);}return 'osm1:'+(h>>>0).toString(36)+'_'+l.pts.length;}
 
 /* ---------- 状態 ---------- */
 let FILE=null,R=null;
 const st={nav:false,sim:false,simMul:1,voice:true,seg:-1,along:0,off:false,offCnt:0,joined:false,pos:null,prev:null,heading:0,kmh:0,avg:35,arrived:false,follow:true,watch:null,simTimer:null,simD:0,wake:null,leg:0,rev:false};
 
 /* ---------- 地図 ---------- */
-const map=L.map('map',{zoomControl:false,attributionControl:true}).setView([35.68,139.76],12);
+const map=L.map('map',{zoomControl:false,attributionControl:true,preferCanvas:true}).setView([35.68,139.76],12);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
 let lyr=L.layerGroup().addTo(map),doneLine=null,rider=null,accCircle=null;
 const riderIcon=L.divIcon({className:'rider',iconSize:[44,44],iconAnchor:[22,22],html:'<svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="19" fill="#fff"/><circle cx="22" cy="22" r="16" fill="#2f80ff"/><path d="M22 9 L31 31 L22 26 L13 31 Z" fill="#fff"/></svg>'});
-function drawRoute(){
+function drawRoute(fit){
   lyr.clearLayers();
   const ll=R.pts.map(p=>[p.lat,p.lng]);
   L.polyline(ll,{color:'#000',weight:11,opacity:.55}).addTo(lyr);
   L.polyline(ll,{color:'#ffb627',weight:7}).addTo(lyr);
   doneLine=L.polyline([],{color:'#5b6470',weight:7}).addTo(lyr);
-  R.turns.forEach(t=>L.circleMarker([t.lat,t.lng],t.voice?{radius:5,color:'#000',weight:1,fillColor:'#fff',fillOpacity:1}:{radius:3,color:'#000',weight:1,fillColor:'#8b95a3',fillOpacity:1}).addTo(lyr));
+  R.turns.forEach(t=>L.circleMarker([t.lat,t.lng],{radius:t.kind==='turn'?5:6,color:'#000',weight:1,fillColor:t.kind==='turn'?'#fff':'#7fb2ff',fillOpacity:1}).addTo(lyr));
+  (R.signals||[]).forEach(s=>{const p=R.res[Math.min(R.res.length-1,Math.round(s/5))];L.circleMarker([p.lat,p.lng],{radius:3,color:'#000',weight:1,fillColor:'#ff4d4f',fillOpacity:1,interactive:false}).addTo(lyr);});
   R.wps.forEach(w=>L.circleMarker([w.lat,w.lng],{radius:8,color:'#000',weight:2,fillColor:'#3ecf8e',fillOpacity:1}).bindTooltip(w.name,{permanent:true,direction:'right',offset:[8,0]}).addTo(lyr));
   const s=R.pts[0],e=R.pts[R.pts.length-1];
   L.circleMarker([s.lat,s.lng],{radius:9,color:'#000',weight:2,fillColor:'#fff',fillOpacity:1}).bindTooltip('出発',{permanent:true,direction:'left',offset:[-8,0]}).addTo(lyr);
   L.circleMarker([e.lat,e.lng],{radius:9,color:'#000',weight:2,fillColor:'#ff4d4f',fillOpacity:1}).bindTooltip('到着',{permanent:true,direction:'left',offset:[-8,0]}).addTo(lyr);
-  map.fitBounds(L.latLngBounds(ll),{padding:[30,30]});
+  if(fit) map.fitBounds(L.latLngBounds(ll),{padding:[30,30]});
+  if(st.nav&&st.pos&&doneLine) doneLine.setLatLngs(R.pts.slice(0,st.seg+1).map(q=>[q.lat,q.lng]));
 }
 map.on('dragstart',()=>{if(st.nav){st.follow=false;$('#recenter').hidden=false;}});
 $('#recenter').onclick=()=>{st.follow=true;$('#recenter').hidden=true;if(st.pos)followMap(true);};
@@ -347,7 +732,36 @@ function drawArrow(ang){
 }
 function fmt(d){d=Math.max(0,d);return d<1000?[String(Math.round(d/10)*10),'m']:[(d/1000).toFixed(d<10000?1:0),'km'];}
 function setDist(d){const [n,u]=fmt(d);$('#mdist').innerHTML=`${n}<small>${u}</small>`;}
-function nextTurn(voiced,after){if(!R)return null;const from=after!=null?after:st.along+3;for(const t of R.turns) if(t.d>from&&(!voiced||t.voice)) return t;return null;}
+function nextTurn(after){if(!R)return null;const from=after!=null?after:st.along+3;for(const t of R.turns) if(t.d>from) return t;return null;}
+// 案内地点が信号なら、いまの位置から数えて何番目の信号か（4つ以上先なら0）
+function sigOrd(t){if(!t.sig||!R.signals.length) return 0;let k=0;for(const s of R.signals) if(s>st.along+15&&s<t.d-35) k++;return k<3?k+1:0;}
+const sideW=t=>t.side<0?'左':'右';
+function dirWord(t){return t.kind==='turn'||(t.kind==='entry'&&Math.abs(t.ang)>=50)?turnText(t.ang):sideW(t)+'方向';}
+function arrowAng(t){return t.kind==='turn'||(t.kind==='entry'&&Math.abs(t.ang)>=50)?t.ang:t.side*Math.min(60,Math.max(35,Math.abs(t.ang)));}
+function label(t,ord){
+  switch(t.kind){
+    case 'exit': return `${t.name?t.name+' ':''}出口・${sideW(t)}`;
+    case 'entry': return `${t.name?t.name+' ':'高速'}入口を${dirWord(t)}`;
+    case 'jct': return `${t.name?t.name+' ':''}${t.dest?t.dest+'方面':sideW(t)+'方向'}`;
+    case 'keep': return t.sideRoad?`${sideW(t)}の側道へ`:`${sideW(t)}方向`;
+    default: {const tt=turnText(t.ang);return ord?`${ord===1?'次の':ord+'つ目の'}信号を${tt}`:tt==='Uターン'?tt:`${tt}方向`;}
+  }
+}
+function phrase(t,d,ord,stage){
+  const pre=stage==='near'?'まもなく':`${sayDist(d)}先、`,sw=sideW(t);
+  switch(t.kind){
+    case 'exit': return stage==='far'?`${pre}${t.name||'出口'}で降ります`:`${pre}${t.name?t.name+'出口':'出口'}、${sw}方向です`;
+    case 'entry': return `${pre}${t.name?t.name+'入口':'高速道路の入口'}を${dirWord(t)}です`;
+    case 'jct': return `${pre}${t.name?t.name+'、':''}${t.dest?t.dest+'方面、':''}${sw}方向です`;
+    case 'keep': return t.sideRoad?`${pre}${sw}の側道へ進みます`:`${pre}${sw}方向です`;
+    default:{
+      const tt=turnText(t.ang);
+      if(stage==='near') return `まもなく${t.xname?t.xname+'を':''}${tt}です`;
+      if(ord) return `${stage==='far'&&d>350?sayDist(d)+'先、':''}${ord===1?'次の信号':ord+'つ目の信号'}${t.xname?'、'+t.xname:''}を${tt}です`;
+      return `${pre}${t.xname?t.xname+'を':''}${tt}です`;
+    }
+  }
+}
 function nextWp(){if(!R)return null;for(const w of R.wps) if(w.d>st.along+20) return w;return null;}
 function render(){
   const man=$('#man');man.classList.remove('off','goal','approach');
@@ -368,9 +782,9 @@ function render(){
   if(st.arrived||rem<40){man.classList.add('goal');drawArrow(0);setDist(rem);$('#mlabel').textContent='目的地に到着';$('#mnext').textContent='お疲れさまでした';return;}
   const t=nextTurn();
   if(t){
-    drawArrow(t.ang);setDist(t.d-st.along);$('#mlabel').textContent=turnText(t.ang)+(t.voice?'方向':'（カーブ区間）');
+    drawArrow(arrowAng(t));setDist(t.d-st.along);$('#mlabel').textContent=label(t,sigOrd(t));
     const n2=R.turns[t.idx+1];
-    $('#mnext').textContent=[n2?`その後 ${turnText(n2.ang)} ${fmt(n2.d-t.d).join('')}`:'',wpTxt].filter(Boolean).join(' · ');
+    $('#mnext').textContent=[t.xname||'',n2?`その後 ${label(n2,0)} ${fmt(n2.d-t.d).join('')}`:'',wpTxt].filter(Boolean).join(' · ');
   }else{
     drawArrow(0);setDist(rem);$('#mlabel').textContent='道なりに進んで到着';$('#mnext').textContent=wpTxt;
   }
@@ -384,20 +798,21 @@ function say(text,urgent){
   speechSynthesis.speak(u);
 }
 function sayDist(d){return d>=1000?`${(Math.round(d/100)/10)}キロ`:`${Math.max(100,Math.round(d/100)*100)}メートル`;}
-// 速度に応じて案内のタイミングを前倒しする（高速道路では1km・300m・約10秒前）
+// 速度に応じて案内のタイミングを前倒しする。IC出口とJCTは2km・500m・約10秒前。
+// 信号で曲がるときは、その信号が「次の信号」になった時点でもう一度案内する
 function announce(){
   if(!st.nav||st.off||!st.joined) return;
   const rem=R.total-st.along;
   if(rem<40&&!st.arrived){st.arrived=true;say('目的地に到着しました。お疲れさまでした',true);return;}
-  const t=nextTurn(true);
+  const t=nextTurn();
   if(t){
-    const d=t.d-st.along,mps=st.kmh/3.6;
-    const far=st.kmh>70?1000:st.kmh>45?500:300,mid=st.kmh>70?300:100,near=Math.max(35,mps*3.5);
-    const n2=nextTurn(true,t.d);
-    const tail=n2&&n2.d-t.d<150?`、その先すぐ${turnText(n2.ang)}です`:'';
-    if(d<=near&&!t.s3){t.s1=t.s2=t.s3=true;say(`まもなく${turnText(t.ang)}です${tail}`,true);}
-    else if(d<=mid+10&&d>near&&!t.s2){t.s1=t.s2=true;say(`${sayDist(Math.min(d,mid))}先、${turnText(t.ang)}です${tail}`);}
-    else if(d<=far&&d>mid+40&&!t.s1){t.s1=true;say(`${sayDist(d)}先、${turnText(t.ang)}です`);}
+    const d=t.d-st.along,mps=st.kmh/3.6,hw=t.kind==='exit'||t.kind==='jct'||st.kmh>75;
+    const far=hw?2000:st.kmh>45?500:300,mid=hw?500:100,near=Math.max(35,mps*3.5),ord=sigOrd(t);
+    const n2=nextTurn(t.d);
+    const tail=n2&&n2.d-t.d<150?`、その先すぐ${dirWord(n2)}です`:'';
+    if(d<=near&&!t.s3){t.s1=t.s2=t.s3=true;say(phrase(t,d,ord,'near')+tail,true);}
+    else if(!t.s2&&d>near&&(d<=mid+10||(!hw&&ord===1&&d<=250&&!R.signals.some(s=>s>st.along-20&&s<st.along+30)))){t.s1=t.s2=true;say(phrase(t,d,ord,'mid')+tail);}
+    else if(!t.s1&&d<=far&&d>mid+40){t.s1=true;say(phrase(t,d,ord,'far'));}
   }
   for(const w of R.wps){const d=w.d-st.along;if(d<250&&d>-20&&!w.said){w.said=true;say(`まもなく、${w.name}です`);}}
 }
@@ -511,8 +926,44 @@ function updateSheet(){
     b.append(nm,km);b.onclick=()=>{selectLeg(i,false);showMsg(`「${l.name}」を選びました`,true);};
     box.append(b);
   });
-  $('#sDist').textContent=(R.total/1000).toFixed(1);$('#sTurn').textContent=R.turns.filter(t=>t.voice).length;$('#sWp').textContent=R.wps.length;
+  $('#sDist').textContent=(R.total/1000).toFixed(1);$('#sTurn').textContent=R.turns.length;$('#sSig').textContent=R.roads?R.signals.length:'—';$('#sWp').textContent=R.wps.length;
   $('#revBtn').textContent=st.rev?'ルートを元の向きに':'ルートを逆向きに';
+  $('#roadStat').textContent=roadMsg;$('#roadStat').className=roadState;
+  $('#roadBtn').hidden=!!FILE.sample||roadState==='busy';
+  $('#roadBtn').textContent=!R.roads?'道路データを取得':R.roadsPartial?'取れなかった区間を取り直す':'道路データを取り直す';
+}
+let roadMsg='',roadState='',roadToken=0;
+function setRoad(msg,state){roadMsg=msg;roadState=state||'';const s=$('#roadStat');s.textContent=msg;s.className=roadState;$('#roadBtn').hidden=!!(FILE&&FILE.sample)||roadState==='busy';}
+// 選んだルートに沿って道路データを用意する。一度取れば端末に保存し、圏外でも使える
+async function ensureRoads(force){
+  if(!FILE||FILE.sample){setRoad('サンプルでは道路データを使いません');return;}
+  const token=++roadToken,leg=FILE.legs[st.leg],key=legKey(leg);
+  let osm=await idb.get(key);
+  if(token!==roadToken) return;
+  // 取り直しは、取れなかった区間があればそこだけ、全部そろっていれば最初から
+  if(!osm||force){
+    setRoad('道路データを取得しています…','busy');
+    try{
+      osm=await fetchRoadData(leg.pts,(i,n)=>{if(token===roadToken) setRoad(`道路データを取得しています… ${i}/${n}区間`,'busy');},osm&&osm.failed?osm:null,()=>token===roadToken);
+    }catch(e){
+      if(token!==roadToken) return;
+      if(token===roadToken) setRoad(navigator.onLine===false?'圏外のため道路データを取得できません。線の形だけで案内します':'道路データを取得できませんでした。線の形だけで案内します','err');
+      return;
+    }
+    if(!(await idb.set(key,osm))&&token===roadToken) showMsg('道路データを端末に保存できませんでした。開き直すと再取得します');
+  }
+  if(token!==roadToken) return;
+  applyRoads(osm);
+}
+function applyRoads(osm){
+  if(!R) return;
+  const out=analyzeRoads(R,osm);
+  R.roads=out.stats;R.roadsPartial=!!osm.failed;R.turns=out.turns;R.signals=out.signals;
+  drawRoute(!st.nav);
+  const s=out.stats,age=Math.round((Date.now()-(osm.at||Date.now()))/86400000);
+  const part=osm.failed?`。${osm.chunks}区間中${osm.failed}区間は取得できず線の形で案内します（取り直すと補えます）`:'';
+  setRoad(`道路データあり：信号${s.signals}・案内${s.turns}・IC/JCT${s.ic}（道と一致${Math.round(s.cover*100)}%${age>0?`・${age}日前に取得`:''}）${part}`,s.cover<0.5||osm.failed?'err':'ok');
+  render();updateSheet();
 }
 function selectLeg(i,rev){
   stopNav(true);
@@ -522,8 +973,10 @@ function selectLeg(i,rev){
   const legG=new Set(FILE.legs.map(l=>l.g).filter(g=>g!=null));
   const wps=FILE.wps.filter(w=>w.g==null||w.g===leg.g||!legG.has(w.g));
   R=buildRoute(pts,wps,leg.name+(st.rev?'（逆）':''));
-  st.along=0;drawRoute();render();updateSheet();
+  roadMsg='';roadState='';
+  st.along=0;drawRoute(true);render();updateSheet();
   store.set('rideSel',JSON.stringify({title:FILE.title,leg:i,rev:st.rev}));
+  ensureRoads(false);
 }
 function loadFile(data,save){
   if(!data.legs||!data.legs.length) throw new Error('ルート（線）が見つかりません。マイマップで経路や線を引いたレイヤを書き出してください');
@@ -548,14 +1001,17 @@ $('#file').onchange=async e=>{
 };
 $('#sampleBtn').onclick=()=>{
   const c=[[35.4300,138.8600],[35.4300,138.8700],[35.4250,138.8750],[35.4250,138.8850],[35.4180,138.8850],[35.4180,138.8950],[35.4100,138.8950],[35.4100,138.8800],[35.4150,138.8700]];
-  loadFile({title:'サンプル（架空の練習ルート）',legs:[{name:'練習ルート',pts:c.map(([lat,lng])=>({lat,lng}))}],wps:[{lat:35.4250,lng:138.8800,name:'給油'},{lat:35.4100,lng:138.8900,name:'休憩'}]},false);
+  loadFile({sample:true,title:'サンプル（架空の練習ルート）',legs:[{name:'練習ルート',pts:c.map(([lat,lng])=>({lat,lng}))}],wps:[{lat:35.4250,lng:138.8800,name:'給油'},{lat:35.4100,lng:138.8900,name:'休憩'}]},false);
   showMsg('サンプルを読み込みました。「走行シミュレーション」で動きを確認できます',true);
 };
 $('#startBtn').onclick=()=>{if(st.nav&&!st.sim)stopNav();else startNav(false);};
 $('#simBtn').onclick=()=>{if(st.sim)stopNav();else startNav(true);};
 $('#revBtn').onclick=()=>{if(!R)return;selectLeg(st.leg,!st.rev);showMsg(st.rev?'ルートを逆向きにしました':'ルートを元の向きに戻しました',true);};
 $('#nightBtn').onclick=()=>{const n=document.body.classList.toggle('night');$('#nightBtn').textContent=n?'地図：夜間':'地図：昼間';store.set('rideNight',n?'1':'0');};
+$('#roadBtn').onclick=()=>ensureRoads(true);
 $('#closeBtn').onclick=closeSheet;
+// 画面の向きが変わったら地図の大きさを合わせ直す
+let rsT=null;window.addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{map.invalidateSize();if(st.nav)followMap();},150);});
 $('#menuBtn').onclick=openSheet;
 $('#sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet();};
 $('#voiceBtn').onclick=()=>{st.voice=!st.voice;const b=$('#voiceBtn');b.classList.toggle('on',st.voice);b.innerHTML=`音声<br>${st.voice?'ON':'OFF'}`;if(!st.voice&&'speechSynthesis' in window)speechSynthesis.cancel();};

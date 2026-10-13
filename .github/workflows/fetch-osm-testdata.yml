@@ -1,0 +1,20 @@
+name: fetch-osm-testdata
+on:
+  push:
+    branches: [osm-testdata]
+    paths: [testdata/areas.json, testdata/fetch.py]
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 testdata/fetch.py
+      - run: |
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add testdata
+          git commit -m "OSM test data"
+          git push

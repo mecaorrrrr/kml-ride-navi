@@ -56,7 +56,15 @@ body.night .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85
 .leaflet-control-attribution{font-size:10px;background:rgba(16,19,23,.7)!important;color:var(--muted)!important}
 .leaflet-control-attribution a{color:var(--muted)!important}
 .leaflet-tooltip{font-family:var(--jp);font-size:12px;padding:2px 6px}
-#recenter{position:absolute;right:12px;bottom:12px;z-index:500;padding:14px 18px;border-radius:999px;background:var(--panel);border:2px solid var(--accent);font-weight:700;font-size:16px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+/* 地図の右下：拡大・縮小ボタン（グローブでも押せる大きさ）と「現在地に戻る」を縦に並べる */
+#mapCtl{position:absolute;right:12px;bottom:24px;z-index:500;display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}
+#mapCtl>*{pointer-events:auto}
+#zoomBox{display:flex;flex-direction:column;width:60px;border-radius:30px;background:var(--panel);border:2px solid var(--line);box-shadow:0 4px 14px rgba(0,0,0,.4);overflow:hidden}
+#zoomBox button{height:60px;background:none;display:grid;place-items:center}
+#zoomBox button+button{border-top:1px solid var(--line)}
+#zoomBox button:active{background:#262d36}
+#zoomBox svg{width:28px;height:28px;stroke:var(--fg);stroke-width:3.5;stroke-linecap:round}
+#recenter{padding:14px 18px;border-radius:999px;background:var(--panel);border:2px solid var(--accent);font-weight:700;font-size:16px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
 #simTag{position:absolute;left:12px;top:12px;z-index:500;padding:10px 12px;border-radius:8px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:13px;letter-spacing:.04em}
 .rider{width:44px;height:44px}
 .rider svg{width:44px;height:44px;transition:transform .5s linear;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
@@ -130,7 +138,9 @@ input[type=file]{display:none}
   #voiceBtn{grid-column:1/2}
   #menuBtn{grid-column:2/4}
   #simTag{top:calc(env(safe-area-inset-top,0px) + 10px)}
-  #recenter{right:calc(env(safe-area-inset-right,0px) + 12px)}
+  #mapCtl{right:calc(env(safe-area-inset-right,0px) + 12px);bottom:calc(env(safe-area-inset-bottom,0px) + 18px)}
+  #zoomBox{width:56px}
+  #zoomBox button{height:52px}
   .leaflet-bottom.leaflet-right{margin-right:env(safe-area-inset-right,0px)}
   #sheet{align-items:center;padding:8px calc(env(safe-area-inset-right,0px) + 8px) 8px calc(env(safe-area-inset-left,0px) + 8px)}
   /* メニューは左に説明、右に操作の2列にして、ナビ開始までスクロールせずに届くようにする */
@@ -159,7 +169,13 @@ input[type=file]{display:none}
   <div id="mapWrap">
     <div id="map"></div>
     <button id="simTag" hidden>シミュレーション ×1</button>
-    <button id="recenter" hidden>現在地に戻る</button>
+    <div id="mapCtl">
+      <div id="zoomBox">
+        <button id="zoomIn" aria-label="地図を拡大"><svg viewBox="0 0 28 28"><path d="M14 5v18M5 14h18"/></svg></button>
+        <button id="zoomOut" aria-label="地図を縮小"><svg viewBox="0 0 28 28"><path d="M5 14h18"/></svg></button>
+      </div>
+      <button id="recenter" hidden>現在地に戻る</button>
+    </div>
   </div>
   <footer id="bar">
     <div class="stat"><b id="spd">0</b><span>km/h</span></div>
@@ -856,7 +872,7 @@ function legKey(l){let h=2166136261;const step=Math.max(1,Math.floor(l.pts.lengt
 
 /* ---------- 状態 ---------- */
 let FILE=null,R=null;
-const st={nav:false,sim:false,simMul:1,voice:true,seg:-1,along:0,off:false,offCnt:0,joined:false,pos:null,prev:null,heading:0,kmh:0,active:0,still:0,lastT:null,paceLog:[],arrived:false,follow:true,watch:null,simTimer:null,simD:0,wake:null,leg:0,rev:false};
+const st={nav:false,sim:false,simMul:1,voice:true,seg:-1,along:0,off:false,offCnt:0,joined:false,pos:null,prev:null,heading:0,kmh:0,zoomAdj:(+store.get('rideZoom')||0),active:0,still:0,lastT:null,paceLog:[],arrived:false,follow:true,watch:null,simTimer:null,simD:0,wake:null,leg:0,rev:false};
 
 /* ---------- 地図 ---------- */
 const map=L.map('map',{zoomControl:false,attributionControl:true,preferCanvas:true}).setView([35.68,139.76],12);
@@ -881,9 +897,16 @@ function drawRoute(fit){
 }
 map.on('dragstart',()=>{if(st.nav){st.follow=false;$('#recenter').hidden=false;}});
 $('#recenter').onclick=()=>{st.follow=true;$('#recenter').hidden=true;if(st.pos)followMap(true);};
+// ＋／－ボタン。ナビで現在地を追っている間は、速度に応じた縮尺からの増減として覚えておく（追従し直しても保たれる）
+function zoomBy(n){
+  if(st.nav&&st.follow&&st.pos){st.zoomAdj=Math.max(-4,Math.min(2,st.zoomAdj+n));store.set('rideZoom',String(st.zoomAdj));followMap(true);}
+  else if(n>0) map.zoomIn();else map.zoomOut();
+}
+$('#zoomIn').onclick=()=>zoomBy(1);$('#zoomOut').onclick=()=>zoomBy(-1);
 function followMap(force){
   if(!st.pos||(!st.follow&&!force)) return;
-  const z=st.kmh>70?15:st.kmh>35?16:17;
+  // 速度に応じた縮尺に、＋／－ボタンで選んだぶんを足す
+  const z=Math.max(11,Math.min(19,(st.kmh>70?15:st.kmh>35?16:17)+st.zoomAdj));
   const size=map.getSize(),off=Math.min(size.x,size.y)*0.28;
   const pt=map.project([st.pos.lat,st.pos.lng],z).add([Math.sin(st.heading*D2R)*off,-Math.cos(st.heading*D2R)*off]);
   map.setView(map.unproject(pt,z),z,{animate:st.simMul<4,duration:.8});

@@ -173,7 +173,7 @@ input[type=file]{display:none}
       <li>マイマップの共有リンクをSafariで開き、URLの <b>viewer</b> を <b>kml</b> に変えて末尾に <b>&amp;forcekml=1</b> を付けて開く</li>
       <li>ダウンロードされたKMLを、下の「ルートを開く」で読み込む</li>
       <li>日ごとにルートが分かれている場合は、走る日を選ぶ</li>
-      <li>選ぶと<b>道路データ</b>（信号・分岐・IC名）を自動で取得して端末に保存します。出発前に電波の良い所で済ませておくと、圏外でも使えます</li>
+      <li>選ぶと<b>道路データ</b>（信号・分岐・IC名・国道番号・SA/PA）を自動で取得して端末に保存します。出発前に電波の良い所で済ませておくと、圏外でも使えます</li>
     </ol>
     <input type="file" id="file">
     <div class="row">
@@ -352,7 +352,7 @@ function buildRoute(pts,rawWps,name){
   // 道路データが無いときは、線の形から見つけた交差点らしい曲がりだけで案内する
   const geo=turns.filter(t=>t.voice).map(t=>({...t,kind:'turn',side:t.ang<0?-1:1,src:'geo'}));
   geo.forEach((t,k)=>t.idx=k);
-  return {name,pts,cum,total,res,geo,turns:geo,signals:[],roads:null,wps};
+  return {name,pts,cum,total,res,geo,turns:geo,signals:[],sapa:[],roads:null,wps};
 }
 
 /* ---------- 道路データ（OpenStreetMap）で交差点・信号・ICを読み解く ---------- */
@@ -370,10 +370,32 @@ function onewayOf(t){
   return 0;
 }
 function sameRoad(a,b){return a===b||(!!a.t.ref&&a.t.ref===b.t.ref)||(!!a.t.name&&a.t.name===b.t.name);}
+// 案内に使う道路の呼び名。日本のOSMは一般国道を trunk で登録する決まりなので、trunk の番号は国道番号とみなす
+function roadLabel(w){
+  if(!w) return '';
+  const t=w.t,h=(t.highway||'').replace(/_link$/,''),nm=(t.name||'').normalize('NFKC').trim();
+  if(h==='motorway') return nm.replace(/\s*\([^)]*\)$/,'')||(t.ref||'').split(';')[0].trim();
+  const kokudo=nm.match(/^国道\d+号/);if(kokudo) return kokudo[0];
+  const r=(t.ref||'').split(';')[0].trim();
+  if(h==='trunk'&&/^\d+$/.test(r)) return `国道${r}号`;
+  return '';
+}
+function saPaName(t){
+  let n=(t.name||'').normalize('NFKC').replace(/サービスエリア/g,'SA').replace(/パーキングエリア/g,'PA')
+    .replace(/\s*\([^)]*\)\s*$/,'').replace(/\s*(上り|下り|内回り|外回り)線?$/,'').trim();
+  if(!/(SA|PA)$/.test(n)) n+=t.highway==='services'?'SA':'PA';
+  return n;
+}
 function pickTags(t,keys){const o={};for(const k of keys) if(t[k]!=null) o[k]=t[k];return o;}
 function compactOSM(json,into){
-  into=into||{ways:new Map(),nodes:new Map()};
+  into=into||{ways:new Map(),nodes:new Map(),pois:new Map()};
   for(const e of json.elements||[]){
+    // SA（services）とPA（rest_area）。敷地が面で登録されていることが多いので中心点で持つ
+    if(e.tags&&/^(services|rest_area)$/.test(e.tags.highway||'')){
+      const c=e.center||(e.type==='node'?{lat:e.lat,lon:e.lon}:null),key=e.type[0]+e.id;
+      if(c&&e.tags.name&&!into.pois.has(key)) into.pois.set(key,{lat:c.lat,lng:c.lon,t:pickTags(e.tags,['highway','name'])});
+      continue;
+    }
     if(e.type==='way'&&e.nodes&&e.geometry&&e.geometry.length===e.nodes.length&&!e.geometry.some(p=>!p)){
       if(!into.ways.has(e.id)) into.ways.set(e.id,{id:e.id,n:e.nodes,g:e.geometry.map(p=>[+p.lat.toFixed(6),+p.lon.toFixed(6)]),t:pickTags(e.tags||{},['highway','oneway','junction','name','ref','destination','destination:ref'])});
     }else if(e.type==='node'&&e.tags){
@@ -526,7 +548,8 @@ function analyzeRoads(R,osm){
       // 格上の道（国道→市道など）をそのまま進むなら、ゆるい曲がりや細い道の分岐は案内しない
       const major=rank(outH)<rank(comp.w.t.highway);
       // 本線をそのまま進むとき（出口ランプの横を通過するだけ）は案内しない
-      const passRamp=same&&!isLink(outH)&&isLink(comp.w.t.highway)&&Math.abs(ang)<35;
+      // 高速道路どうしは区間ごとに名前の登録が違うことがあるので、本線→本線なら同じ道とみなす
+      const passRamp=(same||(inH==='motorway'&&outH==='motorway'))&&!isLink(outH)&&isLink(comp.w.t.highway)&&Math.abs(ang)<35;
       if(passRamp||(major&&(straightest||Math.abs(ang)<30))) kind=null;
       else if(!straightest||(fork&&!same)) kind='keep';
     }
@@ -536,13 +559,20 @@ function analyzeRoads(R,osm){
       let onLink=false;
       for(let k=o.k;k<N&&res[k].d<D+6000;k++){const h=M[k]&&M[k].w.t.highway;if(!h) continue;if(isLink(h)){onLink=true;continue;}if(!onLink) continue;if(h==='motorway') kind='jct';break;}
     }
-    else if(isLink(outH)&&!isLink(inH)&&(outH==='motorway_link'||outH==='trunk_link')&&inH!=='trunk') kind=kind?'entry':null;
+    // 一般道から高速の入口へ。国道（trunk）から入る場合も含める。trunk どうしをつなぐランプは入口扱いしない
+    // 一般道から高速の入口ランプへ入るときは、角度が浅くても必ず案内する。trunk どうしをつなぐランプは曲がる時だけ
+    else if(outH==='motorway_link'&&!isLink(inH)&&inH!=='motorway'&&!isMinor(inH)) kind='entry';
+    else if(outH==='trunk_link'&&!isLink(inH)&&inH!=='trunk') kind=kind?'entry':null;
     // 料金所や車線の分かれ目のように、すぐ先でまた合流する分岐は案内しない
     if(kind==='keep'&&comp&&rejoin(eout.e,comp.e)) kind=null;
     if(kind==='keep'&&((inH==='motorway'&&outH==='motorway')||(isLink(inH)&&isLink(outH))||(inH==='motorway_link'&&outH==='motorway'))) kind='jct';
     if(!kind) continue;
     const sideRoad=kind==='keep'&&(isLink(outH)||/側道/.test(outW.t.name||''));
-    dec.push({d:D,lat:J.lat,lng:J.lng,kind,ang,side,sideRoad,node:id,outW,inH,outH});
+    // 曲がった先で入る道の名前（ランプは飛ばして、その先の本線や一般道の名前）。今と同じ道なら言わない
+    const roadAt=(from,step,lim)=>{for(let k=from,n=0;k>=0&&k<N&&n<lim;k+=step,n++){const m=M[k];if(m&&!isLink(m.w.t.highway)) return roadLabel(m.w);}return '';};
+    const rIn=roadAt(o.k-4,-1,80),rOut=roadAt(o.k+6,1,isLink(outH)?600:80);
+    const road=rOut&&rOut!==rIn?rOut:'';
+    dec.push({d:D,lat:J.lat,lng:J.lng,kind,ang,side,sideRoad,node:id,outW,inH,outH,road});
   }
   // 信号：ルート上の道にあるもの、またはルートの分岐点から45m以内（交差道路側の信号）にあるもの
   const sigs=[];
@@ -594,6 +624,8 @@ function analyzeRoads(R,osm){
         if(c) x.name=c.name;else if(/IC|インター/i.test((x.outW.t.name||'').normalize('NFKC'))) x.name=x.outW.t.name;
       }
       if(x.name) x.name=x.name.normalize('NFKC');
+      // 分岐点のIC名は「そこで降りる出口」の名前。高速を走り続ける側へ進むなら付けない
+      if(x.kind==='jct'&&x.name&&!/JCT|ジャンクション/.test(x.name)) x.name='';
       const dest=(x.outW.t.destination||x.outW.t['destination:ref']||'').split(';').map(s=>s.trim()).filter(Boolean).slice(0,2);
       if(dest.length) x.dest=dest.join('・');
     }else{
@@ -616,6 +648,7 @@ function analyzeRoads(R,osm){
       if(pri[x.kind]>pri[p.kind]) Object.assign(p,{...x,d:p.d,lat:p.lat,lng:p.lng});
       else if(p.kind==='turn'&&x.kind==='turn'){const a=ndiff(brg(at(x.d+5),at(x.d+40))-brg(at(p.d-40),at(p.d-5)));p.ang=a;p.side=a<0?-1:1;}
       if(!p.xname&&x.xname) p.xname=x.xname;
+      if(!p.road&&x.road) p.road=x.road;
       continue;
     }
     merged.push(x);
@@ -630,9 +663,30 @@ function analyzeRoads(R,osm){
     merged.push({...g});
   }
   merged.sort((a,b)=>a.d-b.d);
+  // 少し前の案内で同じ道の名前を言っていれば繰り返さない（出口を降りてすぐ曲がる所など）
+  for(let i=1;i<merged.length;i++){const x=merged[i];if(!x.road) continue;for(let j=i-1;j>=0&&x.d-merged[j].d<1500;j--) if(merged[j].road===x.road){x.road='';break;}}
   for(const x of merged){x.sig=signals.some(s=>Math.abs(s-x.d)<=35);delete x.outW;}
   merged.forEach((t,k)=>t.idx=k);
-  return {debug:{M,unreliable,gaps,occ,npos,nEdges},turns:merged,signals,stats:{cover:N?mc/N:0,signals:signals.length,turns:merged.length,ic:merged.filter(x=>x.kind==='exit'||x.kind==='jct'||x.kind==='entry').length}};
+  // SA・PA：ルートから300m以内で、その辺りでルートが高速道路（または名前がSA/PA）のもの。
+  // 上下線で別の敷地がある場合は、左側通行なので進行方向の左側にある方を使う
+  const cand=[];
+  for(const p of osm.pois||[]){
+    const raw=(p.t.name||'').normalize('NFKC');if(/道の駅/.test(raw)) continue;
+    let best=null;for(let k=0;k<N;k+=2){const dd=dist(p,res[k]);if(!best||dd<best.dd)best={k,dd};}
+    if(!best||best.dd>300) continue;
+    let onHw=false;for(let j=Math.max(0,best.k-30);j<=Math.min(N-1,best.k+30);j++){const h=M[j]&&M[j].w.t.highway;if(h==='motorway'||h==='motorway_link'){onHw=true;break;}}
+    if(!onHw&&!/(SA|PA|サービスエリア|パーキングエリア)/.test(raw)) continue;
+    const D=res[best.k].d,b=brg(at(D-20),at(D+20)),side=ndiff(brg(res[best.k],p)-b)<0?-1:1;
+    cand.push({d:D,lat:p.lat,lng:p.lng,name:saPaName(p.t),kind:p.t.highway==='services'?'SA':'PA',side,dd:best.dd});
+  }
+  cand.sort((a,b)=>a.d-b.d);
+  const sapa=[];
+  for(const c of cand){
+    const p=sapa.find(x=>x.name===c.name&&Math.abs(x.d-c.d)<3000);
+    if(!p){sapa.push(c);continue;}
+    if((c.side<0&&p.side>0)||(c.side===p.side&&c.dd<p.dd)) Object.assign(p,c);
+  }
+  return {debug:{M,unreliable,gaps,occ,npos,nEdges},turns:merged,signals,sapa,stats:{cover:N?mc/N:0,signals:signals.length,turns:merged.length,ic:merged.filter(x=>x.kind==='exit'||x.kind==='jct'||x.kind==='entry').length,road:merged.filter(x=>x.road).length,sapa:sapa.length}};
 }
 
 /* ---------- 道路データの取得と保存 ---------- */
@@ -649,50 +703,94 @@ function simplify(pts,tol){
   }
   return pts.filter((_,i)=>keep[i]);
 }
-function roadQuery(chunk){
-  const pl=chunk.map(p=>p.lat.toFixed(5)+','+p.lng.toFixed(5)).join(',');
-  return `[out:json][timeout:120];way(around:35,${pl})[highway~"${HWQ}"][service!~"^(parking_aisle|driveway|drive-through)$"];out body geom;`+
-    `node(around:45,${pl})[highway~"^(traffic_signals|motorway_junction)$"];out body;node(around:45,${pl})[junction=yes][name];out body;`;
-}
-async function overpass(q){
-  let lastErr=null;
-  // 公開サーバーは混むと504を返すので、サーバーを替えながら間を空けて3巡まで試す
-  for(let round=0;round<3;round++){
-    for(const ep of OVERPASS){
-      try{
-        const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),120000);
-        const r=await fetch(ep,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl.signal});
-        clearTimeout(tm);
-        if(r.ok) return await r.json();
-        lastErr=new Error('HTTP '+r.status);
-      }catch(e){lastErr=e;}
+// ルートを短く区切り、区切りごとに小さな四角い範囲（余白つき）を作る。
+// 「線から○m以内」の検索（around）は地域によって空の結果を返すことがあり、負担も大きいので使わない
+function corridorBoxes(pts,piece,padM){
+  const out=[];let box=null,len=0;
+  const dLat=padM/110540,dLng=padM/(111320*Math.cos((pts[0]?pts[0].lat:35)*D2R));
+  const add=p=>{if(!box) box=[p.lat,p.lng,p.lat,p.lng];else{box[0]=Math.min(box[0],p.lat);box[1]=Math.min(box[1],p.lng);box[2]=Math.max(box[2],p.lat);box[3]=Math.max(box[3],p.lng);}};
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i],b=pts[i+1],L=dist(a,b),n=Math.max(1,Math.ceil(L/piece));
+    for(let k=0;k<n;k++){
+      add(lerp(a,b,k/n));add(lerp(a,b,(k+1)/n));len+=L/n;
+      if(len>=piece){out.push(box);box=null;len=0;}
     }
-    await new Promise(s=>setTimeout(s,[3000,10000,0][round]));
+  }
+  if(box) out.push(box);
+  return out.map(x=>[x[0]-dLat,x[1]-dLng,x[2]+dLat,x[3]+dLng].map(v=>v.toFixed(5)).join(','));
+}
+// 道路はルート沿い約45m、SA/PAは約300mの範囲を探す。信号・IC・交差点名は見つけた道の上の点から拾う
+function roadQuery(chunk){
+  const road=corridorBoxes(chunk,250,45).map(b=>`way(${b})[highway];`).join('');
+  const sa=corridorBoxes(chunk,2000,300).map(b=>`nwr(${b})[highway~"^(services|rest_area)$"][name];`).join('');
+  return `[out:json][timeout:90];(${road})->.a;way.a[highway~"${HWQ}"][service!~"^(parking_aisle|driveway|drive-through)$"]->.w;.w out body geom;`+
+    `node(w.w)[highway~"^(traffic_signals|motorway_junction)$"];out body;node(w.w)[junction=yes][name];out body;`+
+    `(${sa});out tags center;`;
+}
+// 公開サーバーは混むと「満杯」（502/429/504）をすぐ返す。そのときは間隔を倍々に空けて再試行し、
+// 応答しないサーバーは時間切れで次へ回す。道が1本も返らない結果は失敗として扱う
+// 応答しない・すぐ断るサーバーは、しばらく候補から外す（本家 overpass-api.de は混雑で断られても外さない）
+const epBad=new Map();
+function pickEp(n){const now=Date.now(),ok=OVERPASS.filter(e=>!(epBad.get(e)>now));const list=ok.length?ok:OVERPASS;return list[n%list.length];}
+async function overpass(q,first,alive){
+  let lastErr=null,wait=3000;
+  for(let n=0;n<8;n++){
+    if(alive&&!alive()) throw new Error('cancel');
+    const ep=pickEp((first||0)+n),bench=ms=>{if(ep!==OVERPASS[0]) epBad.set(ep,Date.now()+ms);};
+    try{
+      // 予備のサーバーは応答しないことが多いので、本家より早めに見切る
+      const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),ep===OVERPASS[0]?100000:45000);
+      try{
+        const r=await fetch(ep,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl.signal});
+        if(r.ok){
+          const j=await r.json();
+          if(j.remark&&/timed out|out of memory|error/i.test(j.remark)) throw new Error(j.remark);
+          if(!(j.elements||[]).some(e=>e.type==='way'&&e.geometry)) throw new Error('道が見つからない結果');
+          return j;
+        }
+        lastErr=new Error('HTTP '+r.status);bench(180000);
+        if(![429,502,503,504].includes(r.status)) continue;
+      }finally{clearTimeout(tm);}
+    }catch(e){lastErr=e;if(e.name==='AbortError'||e instanceof TypeError){bench(600000);continue;}}
+    await new Promise(s=>setTimeout(s,wait));wait=Math.min(30000,wait*2);
   }
   throw lastErr||new Error('取得失敗');
 }
+// 公開サーバーは混んでいると1回ごとに数十秒の順番待ちになるので、区間は約50kmと大きめにして回数を減らす
 function roadChunks(pts){
-  const s=simplify(pts,8),chunks=[];
-  for(let i=0;i<s.length-1;i+=120) chunks.push(s.slice(i,Math.min(s.length,i+121)));
+  const s=simplify(pts,8),chunks=[];let cur=[s[0]],len=0;
+  for(let i=1;i<s.length;i++){
+    cur.push(s[i]);len+=dist(s[i-1],s[i]);
+    if(len>=50000&&i<s.length-1){chunks.push(cur);cur=[s[i]];len=0;}
+  }
+  if(cur.length>1) chunks.push(cur);
   return chunks;
 }
 // prevに前回の結果があれば、取れなかった区間だけを取り直す
 async function fetchRoadData(pts,onProg,prev,alive){
   const chunks=roadChunks(pts);
   const reuse=prev&&prev.done&&prev.done.length===chunks.length;
-  const acc={ways:new Map(),nodes:new Map()};
-  if(reuse){for(const w of prev.ways) acc.ways.set(w.id,w);for(const n of prev.nodes) acc.nodes.set(n.id,n);}
+  const acc={ways:new Map(),nodes:new Map(),pois:new Map()};
+  if(reuse){for(const w of prev.ways) acc.ways.set(w.id,w);for(const n of prev.nodes) acc.nodes.set(n.id,n);for(const p of prev.pois||[]) acc.pois.set(p.key,p);}
   const done=reuse?prev.done.slice():chunks.map(()=>false);
-  for(let i=0;i<chunks.length;i++){
-    onProg(done.filter(Boolean).length,chunks.length);
-    if(done[i]) continue;
-    if(alive&&!alive()) throw new Error('cancel');
-    try{compactOSM(await overpass(roadQuery(chunks[i])),acc);done[i]=true;}catch(e){}
-  }
-  onProg(done.filter(Boolean).length,chunks.length);
+  const prog=()=>onProg(done.filter(Boolean).length,chunks.length);
+  let next=0,cancelled=false;
+  const worker=async w=>{
+    for(;;){
+      const i=next++;if(i>=chunks.length||cancelled) return;
+      if(done[i]) continue;
+      if(alive&&!alive()){cancelled=true;return;}
+      try{compactOSM(await overpass(roadQuery(chunks[i]),w,alive),acc);done[i]=true;}catch(e){if(alive&&!alive()){cancelled=true;return;}}
+      prog();
+    }
+  };
+  prog();
+  // 並行して送ると2本目が順番待ちの末に429で断られることが多いので、1本ずつ送る
+  await worker(0);
+  if(cancelled) throw new Error('cancel');
   const failed=done.filter(x=>!x).length;
   if(failed===chunks.length) throw new Error('取得失敗');
-  return {v:1,at:Date.now(),done,failed,chunks:chunks.length,ways:[...acc.ways.values()],nodes:[...acc.nodes.values()]};
+  return {v:2,at:Date.now(),done,failed,chunks:chunks.length,ways:[...acc.ways.values()],nodes:[...acc.nodes.values()],pois:[...acc.pois.entries()].map(([key,p])=>({key,...p}))};
 }
 const idb=(()=>{
   let p=null;
@@ -700,7 +798,7 @@ const idb=(()=>{
   const run=async(mode,fn)=>{const db=await open();return new Promise((res,rej)=>{const t=db.transaction('kv',mode),q=fn(t.objectStore('kv'));t.oncomplete=()=>res(q.result);t.onerror=()=>rej(t.error);});};
   return {get:k=>run('readonly',s=>s.get(k)).catch(()=>null),set:(k,v)=>run('readwrite',s=>s.put(v,k)).then(()=>true).catch(()=>false)};
 })();
-function legKey(l){let h=2166136261;const step=Math.max(1,Math.floor(l.pts.length/400));for(let i=0;i<l.pts.length;i+=step){h=Math.imul(h^((l.pts[i].lat*1e5)|0),16777619);h=Math.imul(h^((l.pts[i].lng*1e5)|0),16777619);}return 'osm1:'+(h>>>0).toString(36)+'_'+l.pts.length;}
+function legKey(l){let h=2166136261;const step=Math.max(1,Math.floor(l.pts.length/400));for(let i=0;i<l.pts.length;i+=step){h=Math.imul(h^((l.pts[i].lat*1e5)|0),16777619);h=Math.imul(h^((l.pts[i].lng*1e5)|0),16777619);}return 'osm3:'+(h>>>0).toString(36)+'_'+l.pts.length;}
 
 /* ---------- 状態 ---------- */
 let FILE=null,R=null;
@@ -719,6 +817,7 @@ function drawRoute(fit){
   doneLine=L.polyline([],{color:'#5b6470',weight:7}).addTo(lyr);
   R.turns.forEach(t=>L.circleMarker([t.lat,t.lng],{radius:t.kind==='turn'?5:6,color:'#000',weight:1,fillColor:t.kind==='turn'?'#fff':'#7fb2ff',fillOpacity:1}).addTo(lyr));
   (R.signals||[]).forEach(s=>{const p=R.res[Math.min(R.res.length-1,Math.round(s/5))];L.circleMarker([p.lat,p.lng],{radius:3,color:'#000',weight:1,fillColor:'#ff4d4f',fillOpacity:1,interactive:false}).addTo(lyr);});
+  (R.sapa||[]).forEach(a=>L.circleMarker([a.lat,a.lng],{radius:7,color:'#000',weight:2,fillColor:'#2f80ff',fillOpacity:1}).bindTooltip(a.name,{permanent:true,direction:'right',offset:[8,0]}).addTo(lyr));
   R.wps.forEach(w=>L.circleMarker([w.lat,w.lng],{radius:8,color:'#000',weight:2,fillColor:'#3ecf8e',fillOpacity:1}).bindTooltip(w.name,{permanent:true,direction:'right',offset:[8,0]}).addTo(lyr));
   const s=R.pts[0],e=R.pts[R.pts.length-1];
   L.circleMarker([s.lat,s.lng],{radius:9,color:'#000',weight:2,fillColor:'#fff',fillOpacity:1}).bindTooltip('出発',{permanent:true,direction:'left',offset:[-8,0]}).addTo(lyr);
@@ -777,6 +876,8 @@ function phrase(t,d,ord,stage){
     }
   }
 }
+// 入る道の名前を「〜、国道20号です」の形で添える（「まもなく」の案内では短くするため付けない）
+function withRoad(s,t){return t.road&&/です$/.test(s)?s.replace(/です$/,`、${t.road}です`):s;}
 function nextWp(){if(!R)return null;for(const w of R.wps) if(w.d>st.along+20) return w;return null;}
 function render(){
   const man=$('#man');man.classList.remove('off','goal','approach');
@@ -786,6 +887,8 @@ function render(){
   $('#spd').textContent=Math.round(st.kmh);
   if(st.nav){const sp=Math.max(15,st.avg);const t=new Date(Date.now()+rem/1000/sp*3600000);$('#eta').textContent=`${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')}`;}
   const wp=nextWp(),wpTxt=wp?`${wp.name}まで ${fmt(wp.d-st.along).join('')}`:'';
+  // 次のSA/PA（30km以内）も経由地と同じように出す
+  const sa=(R.sapa||[]).find(a=>a.d>st.along+20&&a.d-st.along<30000),saTxt=sa?`${sa.name}まで ${fmt(sa.d-st.along).join('')}`:'';
   if(!st.nav){drawArrow(0);setDist(R.total);$('#mlabel').textContent=R.name;$('#mnext').textContent='メニューの「ナビ開始」で案内を始めます';return;}
   if(!st.pos){drawArrow(0);$('#mdist').textContent='—';$('#mlabel').textContent='現在地を探しています';$('#mnext').textContent='空が見える場所で少し待ってください';return;}
   if(!st.joined||st.off){
@@ -799,9 +902,11 @@ function render(){
   if(t){
     drawArrow(arrowAng(t));setDist(t.d-st.along);$('#mlabel').textContent=label(t,sigOrd(t));
     const n2=R.turns[t.idx+1];
-    $('#mnext').textContent=[t.xname||'',n2?`その後 ${label(n2,0)} ${fmt(n2.d-t.d).join('')}`:'',wpTxt].filter(Boolean).join(' · ');
+    // 次の案内より手前にあるSA/PAは先に出す（縦画面は1行なので後ろは切れやすい）
+    const saFirst=sa&&sa.d<t.d;
+    $('#mnext').textContent=[t.road?t.road+'へ':'',saFirst?saTxt:'',t.xname||'',n2?`その後 ${label(n2,0)} ${fmt(n2.d-t.d).join('')}`:'',saFirst?'':saTxt,wpTxt].filter(Boolean).join(' · ');
   }else{
-    drawArrow(0);setDist(rem);$('#mlabel').textContent='道なりに進んで到着';$('#mnext').textContent=wpTxt;
+    drawArrow(0);setDist(rem);$('#mlabel').textContent='道なりに進んで到着';$('#mnext').textContent=[saTxt,wpTxt].filter(Boolean).join(' · ');
   }
 }
 
@@ -826,9 +931,10 @@ function announce(){
     const n2=nextTurn(t.d);
     const tail=n2&&n2.d-t.d<150?`、その先すぐ${dirWord(n2)}です`:'';
     if(d<=near&&!t.s3){t.s1=t.s2=t.s3=true;say(phrase(t,d,ord,'near')+tail,true);}
-    else if(!t.s2&&d>near&&(d<=mid+10||(!hw&&ord===1&&d<=250&&!R.signals.some(s=>s>st.along-20&&s<st.along+30)))){t.s1=t.s2=true;say(phrase(t,d,ord,'mid')+tail);}
-    else if(!t.s1&&d<=far&&d>mid+40){t.s1=true;say(phrase(t,d,ord,'far'));}
+    else if(!t.s2&&d>near&&(d<=mid+10||(!hw&&ord===1&&d<=250&&!R.signals.some(s=>s>st.along-20&&s<st.along+30)))){t.s1=t.s2=true;say(withRoad(phrase(t,d,ord,'mid'),t)+tail);}
+    else if(!t.s1&&d<=far&&d>mid+40){t.s1=true;say(withRoad(phrase(t,d,ord,'far'),t));}
   }
+  for(const a of R.sapa||[]){const d=a.d-st.along;if(d<=2000&&d>1200&&!a.s1){a.s1=true;say(`${sayDist(d)}先、${a.name}です`);}else if(d<=400&&d>0&&!a.s2){a.s1=a.s2=true;say(`まもなく、${a.name}です`);}}
   for(const w of R.wps){const d=w.d-st.along;if(d<250&&d>-20&&!w.said){w.said=true;say(`まもなく、${w.name}です`);}}
 }
 
@@ -887,7 +993,7 @@ function onFix(f){
 /* ---------- ナビ開始・終了 ---------- */
 async function keepAwake(){try{if('wakeLock' in navigator&&document.visibilityState==='visible') st.wake=await navigator.wakeLock.request('screen');}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(st.nav&&document.visibilityState==='visible') keepAwake();});
-function resetProgress(){st.seg=-1;st.along=0;st.off=false;st.offCnt=0;st.joined=false;st.arrived=false;st.prev=null;st.pos=null;R.turns.forEach(t=>{t.s1=t.s2=t.s3=false;});R.wps.forEach(w=>w.said=false);if(doneLine)doneLine.setLatLngs([]);}
+function resetProgress(){st.seg=-1;st.along=0;st.off=false;st.offCnt=0;st.joined=false;st.arrived=false;st.prev=null;st.pos=null;R.turns.forEach(t=>{t.s1=t.s2=t.s3=false;});R.wps.forEach(w=>w.said=false);(R.sapa||[]).forEach(a=>{a.s1=a.s2=false;});if(doneLine)doneLine.setLatLngs([]);}
 function simTick(){
   st.simD=Math.min(R.total,st.simD+13.9);
   let i=st.simI||0;while(i<R.pts.length-2&&R.cum[i+1]<st.simD) i++;st.simI=i;
@@ -973,11 +1079,11 @@ async function ensureRoads(force){
 function applyRoads(osm){
   if(!R) return;
   const out=analyzeRoads(R,osm);
-  R.roads=out.stats;R.roadsPartial=!!osm.failed;R.turns=out.turns;R.signals=out.signals;
+  R.roads=out.stats;R.roadsPartial=!!osm.failed;R.turns=out.turns;R.signals=out.signals;R.sapa=out.sapa;
   drawRoute(!st.nav);
   const s=out.stats,age=Math.round((Date.now()-(osm.at||Date.now()))/86400000);
   const part=osm.failed?`。${osm.chunks}区間中${osm.failed}区間は取得できず線の形で案内します（取り直すと補えます）`:'';
-  setRoad(`道路データあり：信号${s.signals}・案内${s.turns}・IC/JCT${s.ic}（道と一致${Math.round(s.cover*100)}%${age>0?`・${age}日前に取得`:''}）${part}`,s.cover<0.5||osm.failed?'err':'ok');
+  setRoad(`道路データあり：信号${s.signals}・案内${s.turns}・IC/JCT${s.ic}・道路名${s.road}・SA/PA${s.sapa}（道と一致${Math.round(s.cover*100)}%${age>0?`・${age}日前に取得`:''}）${part}`,s.cover<0.5||osm.failed?'err':'ok');
   render();updateSheet();
 }
 function selectLeg(i,rev){

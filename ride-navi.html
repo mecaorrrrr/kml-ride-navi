@@ -24,6 +24,8 @@
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
+/* iPhoneのSafariは横向きにすると文字を勝手に拡大するので止める */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:var(--jp);-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
 #app{position:fixed;inset:0;display:flex;flex-direction:column}
 button{font:inherit;color:inherit;border:0;cursor:pointer}
@@ -102,27 +104,40 @@ body.night .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85
 #msg{font-size:13px;color:var(--off);min-height:1em}
 #msg.ok{color:var(--ok)}
 input[type=file]{display:none}
-/* 横画面：左に案内とメーター、右に地図 */
+/* 横画面：左に案内とメーター、右に地図。
+   ノッチ側（左右どちらにもなる）の余白は env() で避け、左列の中身の幅は機種によらずほぼ一定にする */
 @media (orientation:landscape) and (max-height:560px){
-  #app{display:grid;grid-template-columns:minmax(260px,34%) 1fr;grid-template-rows:1fr auto;grid-template-areas:"man map" "bar map"}
-  #man{grid-area:man;min-height:0;gap:12px;border-bottom:0;border-right:1px solid var(--line);padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 10px calc(env(safe-area-inset-left,0px) + 12px)}
-  #arrowBox{flex-basis:76px;height:76px;border-radius:12px}
-  #arrowBox svg{width:66px;height:66px}
-  #mdist{font-size:52px}
-  #mdist small{font-size:22px}
-  #mlabel{font-size:19px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  #mnext{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  #app{display:grid;grid-template-columns:calc(env(safe-area-inset-left,0px) + clamp(272px,36vw,360px)) 1fr;grid-template-rows:minmax(0,1fr) auto;grid-template-areas:"man map" "bar map"}
+  /* 矢印と距離を横に並べ、案内文はその下に列の幅いっぱいで出す */
+  #man{grid-area:man;min-height:0;overflow:hidden;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"arrow dist" "label label" "next next";align-content:center;align-items:center;gap:6px 12px;border-bottom:0;border-right:1px solid var(--line);padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 8px calc(env(safe-area-inset-left,0px) + 14px)}
+  .mtxt{display:contents}
+  #arrowBox{grid-area:arrow;width:72px;height:72px;border-radius:12px}
+  #arrowBox svg{width:62px;height:62px}
+  #mdist{grid-area:dist;font-size:clamp(44px,7vw,56px);white-space:nowrap}
+  #mdist small{font-size:.42em}
+  #mlabel{grid-area:label;margin-top:2px;font-size:19px;line-height:1.3;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  #mnext{grid-area:next;margin-top:0;font-size:13px;line-height:1.45;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   #mapWrap{grid-area:map}
-  #bar{grid-area:bar;display:grid;grid-template-columns:.8fr 1fr 1.3fr;gap:6px 8px;border-right:1px solid var(--line);padding:8px 10px calc(env(safe-area-inset-bottom,0px) + 8px) calc(env(safe-area-inset-left,0px) + 12px)}
-  .stat b{font-size:clamp(22px,3.6vw,30px)}
-  .btn{min-height:46px;flex-direction:row;gap:4px}
+  #bar{grid-area:bar;display:grid;grid-template-columns:.85fr 1fr 1.25fr;gap:6px 8px;border-right:1px solid var(--line);padding:8px 12px calc(env(safe-area-inset-bottom,0px) + 8px) calc(env(safe-area-inset-left,0px) + 14px)}
+  .stat b{font-size:clamp(22px,3.3vw,28px)}
+  .stat span{font-size:10px}
+  .btn{min-height:44px;flex-direction:row;gap:4px;font-size:13px}
   .btn br{display:none}
   #voiceBtn{grid-column:1/2}
   #menuBtn{grid-column:2/4}
+  #simTag{top:calc(env(safe-area-inset-top,0px) + 10px)}
   #recenter{right:calc(env(safe-area-inset-right,0px) + 12px)}
   .leaflet-bottom.leaflet-right{margin-right:env(safe-area-inset-right,0px)}
   #sheet{align-items:center;padding:8px calc(env(safe-area-inset-right,0px) + 8px) 8px calc(env(safe-area-inset-left,0px) + 8px)}
-  .card{max-width:680px;max-height:100%;border-radius:20px;padding-bottom:20px}
+  /* メニューは左に説明、右に操作の2列にして、ナビ開始までスクロールせずに届くようにする */
+  .card{max-width:880px;max-height:100%;border-radius:20px;padding:16px 16px 16px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);column-gap:18px;row-gap:10px;align-content:start}
+  .card>*{grid-column:2}
+  .card>h1{grid-column:1;grid-row:1}
+  .card>.how{grid-column:1;grid-row:2/span 4;align-self:start;font-size:12px;line-height:1.7}
+  .card>p{grid-column:1;grid-row:6/span 2;align-self:end;font-size:12px;line-height:1.6}
+  .big{padding:13px}
+  .sum div{padding:6px 8px}
+  .sum b{font-size:22px}
 }
 @media (prefers-reduced-motion:reduce){.rider svg,#man{transition:none}}
 </style>
@@ -1011,7 +1026,10 @@ $('#nightBtn').onclick=()=>{const n=document.body.classList.toggle('night');$('#
 $('#roadBtn').onclick=()=>ensureRoads(true);
 $('#closeBtn').onclick=closeSheet;
 // 画面の向きが変わったら地図の大きさを合わせ直す
-let rsT=null;window.addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{map.invalidateSize();if(st.nav)followMap();},150);});
+// iPhoneは回転直後のresize時点ではまだ大きさが確定していないことがあるので、少し後にもう一度合わせる
+let rsT=null,rsT2=null;
+function onResize(){clearTimeout(rsT);clearTimeout(rsT2);const fix=()=>{map.invalidateSize();if(st.nav)followMap();else if(R)drawRoute(true);};rsT=setTimeout(fix,150);rsT2=setTimeout(fix,600);}
+window.addEventListener('resize',onResize);window.addEventListener('orientationchange',onResize);
 $('#menuBtn').onclick=openSheet;
 $('#sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet();};
 $('#voiceBtn').onclick=()=>{st.voice=!st.voice;const b=$('#voiceBtn');b.classList.toggle('on',st.voice);b.innerHTML=`音声<br>${st.voice?'ON':'OFF'}`;if(!st.voice&&'speechSynthesis' in window)speechSynthesis.cancel();};

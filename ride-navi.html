@@ -104,6 +104,10 @@ body.night .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85
 #msg{font-size:13px;color:var(--off);min-height:1em}
 #msg.ok{color:var(--ok)}
 input[type=file]{display:none}
+.link{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+#mmUrl{min-width:0;padding:12px;border-radius:12px;border:1px solid var(--line);background:#20262d;color:var(--fg);font:16px var(--jp)}
+#mmUrl::placeholder{color:var(--muted)}
+#linkBtn{white-space:nowrap}
 /* 横画面：左に案内とメーター、右に地図。
    ノッチ側（左右どちらにもなる）の余白は env() で避け、左列の中身の幅は機種によらずほぼ一定にする */
 @media (orientation:landscape) and (max-height:560px){
@@ -170,11 +174,15 @@ input[type=file]{display:none}
   <div class="card">
     <h1>マイマップの<em>ルート</em>でナビ</h1>
     <ol class="how">
-      <li>マイマップの共有リンクをSafariで開き、URLの <b>viewer</b> を <b>kml</b> に変えて末尾に <b>&amp;forcekml=1</b> を付けて開く</li>
-      <li>ダウンロードされたKMLを、下の「ルートを開く」で読み込む</li>
+      <li>マイマップの<b>共有リンク</b>を下の欄に貼り付けて「読み込む」を押す（共有設定は「リンクを知っている全員」が閲覧可）。地図を直したら、もう一度押すと最新になります</li>
+      <li>KMLファイルを持っている場合は「ルートを開く」で読み込む</li>
       <li>日ごとにルートが分かれている場合は、走る日を選ぶ</li>
       <li>選ぶと<b>道路データ</b>（信号・分岐・IC名・国道番号・SA/PA）を自動で取得して端末に保存します。出発前に電波の良い所で済ませておくと、圏外でも使えます</li>
     </ol>
+    <div class="link">
+      <input id="mmUrl" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="マイマップの共有リンクを貼り付け">
+      <button class="big" id="linkBtn">読み込む</button>
+    </div>
     <input type="file" id="file">
     <div class="row">
       <button class="big" id="openBtn">ルートを開く</button>
@@ -186,7 +194,7 @@ input[type=file]{display:none}
       <div id="legs"></div>
       <div class="sum">
         <div><b id="sDist">0</b><span>距離 km</span></div>
-        <div><b id="sTurn">0</b><span>案内地点</span></div>
+        <div><b id="sTime">0</b><span>所要（目安）</span></div>
         <div><b id="sSig">—</b><span>信号</span></div>
         <div><b id="sWp">0</b><span>経由地</span></div>
       </div>
@@ -352,8 +360,54 @@ function buildRoute(pts,rawWps,name){
   // 道路データが無いときは、線の形から見つけた交差点らしい曲がりだけで案内する
   const geo=turns.filter(t=>t.voice).map(t=>({...t,kind:'turn',side:t.ang<0?-1:1,src:'geo'}));
   geo.forEach((t,k)=>t.idx=k);
-  return {name,pts,cum,total,res,geo,turns:geo,signals:[],sapa:[],roads:null,wps};
+  const R0={name,pts,cum,total,res,geo,turns:geo,signals:[],sapa:[],roads:null,wps};
+  R0.cumT=buildTime(R0,null,[]);
+  return R0;
 }
+
+/* ---------- 所要時間の目安 ---------- */
+// 道の種類ごとの想定速度（km/h）。バイクのツーリングで無理のない値。道路データが無い所は roadless を使う
+const SPEED={motorway:80,motorway_link:40,trunk:50,trunk_link:40,primary:45,primary_link:30,secondary:40,secondary_link:30,tertiary:35,tertiary_link:25,unclassified:30,road:25,residential:20,living_street:15,service:15};
+const SIGNAL_WAIT=15;   // 信号1つあたりの平均待ち時間（秒）
+// ルートの5mごとの点について、出発からその点までにかかる時間（秒）を積み上げる。
+// カーブが続く所（前後50mで向きが大きく変わる所）は道の種類によらず速度を抑える
+function buildTime(R,M,signals){
+  const res=R.res,N=res.length,c=new Float64Array(N),P=new Float64Array(N);
+  let prevB=null;
+  for(let k=1;k<N;k++){const b=brg(res[k-1],res[k]);P[k]=P[k-1]+(prevB==null?0:Math.abs(ndiff(b-prevB)));prevB=b;}
+  const roadless=M?30:35,add=new Float64Array(N);
+  for(const sd of signals){const k=Math.min(N-1,Math.round(sd/5));add[k]+=SIGNAL_WAIT;}
+  for(let k=1;k<N;k++){
+    const m=M&&M[k];let v=m?(SPEED[m.w.t.highway]||30):roadless;
+    const wig=P[Math.min(N-1,k+10)]-P[Math.max(0,k-10)];
+    if(wig>200) v=Math.min(v,30);else if(wig>120) v=Math.min(v,40);else if(wig>60) v=Math.min(v,55);
+    c[k]=c[k-1]+(res[k].d-res[k-1].d)/(v/3.6)+add[k];
+  }
+  return c;
+}
+// ルート上の距離 d までの想定時間（秒）
+function tAt(d){const c=R.cumT,x=Math.max(0,Math.min(c.length-1,d/5)),i=Math.floor(x),j=Math.min(c.length-1,i+1);return c[i]+(c[j]-c[i])*(x-i);}
+// 実際の走りが想定より速いか遅いか。直近1時間ほどの「走った時間÷想定時間」を使う。
+// 短い区間の速い・遅いを残り全体に当てはめると予想が大きく揺れるので、幅は0.8〜1.3倍に抑え、
+// 想定で1時間ぶん走るまでは少しずつしか効かせない。長い休憩（3分を超える停止）とルート外の時間は数えない
+function paceFactor(){
+  const log=st.paceLog;if(!log.length) return 1;
+  let b=log[0];for(const x of log){if(st.active-x.a>=3600) b=x;else break;}
+  const exp=tAt(st.along)-tAt(b.d),act=st.active-b.a;
+  if(exp<300||act<=0) return 1;
+  const r=Math.max(0.8,Math.min(1.3,act/exp)),w=Math.min(1,exp/3600);
+  return 1+(r-1)*w;
+}
+// 画面に出す到着時刻は、1分あたり最大30秒しか動かさない（細かく前後して見づらくならないように）
+function shownEta(){
+  const now=Date.now(),target=now+remainSec()*1000;
+  if(st.etaShown==null){st.etaShown=target;st.etaAt=now;return target;}
+  const lim=Math.max(0,now-st.etaAt)*0.5;st.etaAt=now;
+  st.etaShown+=Math.max(-lim,Math.min(lim,target-st.etaShown));
+  return st.etaShown;
+}
+function remainSec(){return Math.max(0,tAt(R.total)-tAt(st.along))*paceFactor();}
+function fmtDur(sec){const m=Math.round(sec/60),h=Math.floor(m/60);return h?`${h}時間${m%60}分`:`${m}分`;}
 
 /* ---------- 道路データ（OpenStreetMap）で交差点・信号・ICを読み解く ---------- */
 const HW_OK=new Set(['motorway','trunk','primary','secondary','tertiary','unclassified','residential','living_street','road','service','motorway_link','trunk_link','primary_link','secondary_link','tertiary_link']);
@@ -686,7 +740,7 @@ function analyzeRoads(R,osm){
     if(!p){sapa.push(c);continue;}
     if((c.side<0&&p.side>0)||(c.side===p.side&&c.dd<p.dd)) Object.assign(p,c);
   }
-  return {debug:{M,unreliable,gaps,occ,npos,nEdges},turns:merged,signals,sapa,stats:{cover:N?mc/N:0,signals:signals.length,turns:merged.length,ic:merged.filter(x=>x.kind==='exit'||x.kind==='jct'||x.kind==='entry').length,road:merged.filter(x=>x.road).length,sapa:sapa.length}};
+  return {debug:{M,unreliable,gaps,occ,npos,nEdges},turns:merged,signals,sapa,cumT:buildTime(R,M,signals),stats:{cover:N?mc/N:0,signals:signals.length,turns:merged.length,ic:merged.filter(x=>x.kind==='exit'||x.kind==='jct'||x.kind==='entry').length,road:merged.filter(x=>x.road).length,sapa:sapa.length}};
 }
 
 /* ---------- 道路データの取得と保存 ---------- */
@@ -802,7 +856,7 @@ function legKey(l){let h=2166136261;const step=Math.max(1,Math.floor(l.pts.lengt
 
 /* ---------- 状態 ---------- */
 let FILE=null,R=null;
-const st={nav:false,sim:false,simMul:1,voice:true,seg:-1,along:0,off:false,offCnt:0,joined:false,pos:null,prev:null,heading:0,kmh:0,avg:35,arrived:false,follow:true,watch:null,simTimer:null,simD:0,wake:null,leg:0,rev:false};
+const st={nav:false,sim:false,simMul:1,voice:true,seg:-1,along:0,off:false,offCnt:0,joined:false,pos:null,prev:null,heading:0,kmh:0,active:0,still:0,lastT:null,paceLog:[],arrived:false,follow:true,watch:null,simTimer:null,simD:0,wake:null,leg:0,rev:false};
 
 /* ---------- 地図 ---------- */
 const map=L.map('map',{zoomControl:false,attributionControl:true,preferCanvas:true}).setView([35.68,139.76],12);
@@ -885,11 +939,11 @@ function render(){
   const rem=Math.max(0,R.total-st.along);
   $('#rem').textContent=(rem/1000).toFixed(rem<100000?1:0);
   $('#spd').textContent=Math.round(st.kmh);
-  if(st.nav){const sp=Math.max(15,st.avg);const t=new Date(Date.now()+rem/1000/sp*3600000);$('#eta').textContent=`${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')}`;}
+  if(st.nav){const t=new Date(shownEta());$('#eta').textContent=`${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')}`;}
   const wp=nextWp(),wpTxt=wp?`${wp.name}まで ${fmt(wp.d-st.along).join('')}`:'';
   // 次のSA/PA（30km以内）も経由地と同じように出す
   const sa=(R.sapa||[]).find(a=>a.d>st.along+20&&a.d-st.along<30000),saTxt=sa?`${sa.name}まで ${fmt(sa.d-st.along).join('')}`:'';
-  if(!st.nav){drawArrow(0);setDist(R.total);$('#mlabel').textContent=R.name;$('#mnext').textContent='メニューの「ナビ開始」で案内を始めます';return;}
+  if(!st.nav){drawArrow(0);setDist(R.total);$('#mlabel').textContent=R.name;$('#mnext').textContent=`所要 約${fmtDur(tAt(R.total))}（休憩なし）· メニューの「ナビ開始」で案内を始めます`;return;}
   if(!st.pos){drawArrow(0);$('#mdist').textContent='—';$('#mlabel').textContent='現在地を探しています';$('#mnext').textContent='空が見える場所で少し待ってください';return;}
   if(!st.joined||st.off){
     man.classList.add(st.joined?'off':'approach');
@@ -970,7 +1024,6 @@ function onFix(f){
   if(!st.prev||dist(st.prev,p)>4) st.prev=p;
   st.heading=h||0;st.pos=p;
   if(f.speed!=null&&f.speed>=0) st.kmh=f.speed*3.6;
-  if(st.kmh>8) st.avg=st.avg*0.97+st.kmh*0.03;
   const m=match(p,st.joined?moved:0,st.heading,st.kmh>10);st.seg=m.i;
   st.along=R.cum[m.i]+m.t*(R.cum[m.i+1]-R.cum[m.i]);
   st.offDist=m.d;st.nearest=lerp(R.pts[m.i],R.pts[m.i+1],m.t);
@@ -981,6 +1034,17 @@ function onFix(f){
     if(m.d>45&&goodFix){if(++st.offCnt>=3){st.off=true;say('ルートを外れました',true);}}
     else st.offCnt=0;
   }else if(m.d<25){st.off=false;st.offCnt=0;say('ルートに戻りました',true);}
+  // 合流前に出した到着時刻は、合流した時点で計算し直す
+  if(st.joined&&!st.wasJoined) st.etaShown=null;
+  st.wasJoined=st.joined;
+  // 到着予想の補正用に、ルート上を走っている時間を数える（3分を超える停止は休憩とみなして数えない）
+  const now=f.t||Date.now();
+  if(st.lastT!=null&&st.joined&&!st.off){
+    const dt=Math.min(10,Math.max(0,(now-st.lastT)/1000));
+    if(st.kmh<3){st.still+=dt;if(st.still<=180) st.active+=dt;}else{st.still=0;st.active+=dt;}
+  }
+  st.lastT=now;
+  if(st.joined&&!st.off&&(!st.paceLog.length||st.active-st.paceLog[st.paceLog.length-1].a>=30)){st.paceLog.push({a:st.active,d:st.along});if(st.paceLog.length>240) st.paceLog.shift();}
   if(!rider) rider=L.marker([p.lat,p.lng],{icon:riderIcon,zIndexOffset:1000,interactive:false}).addTo(map);
   rider.setLatLng([p.lat,p.lng]);
   const svg=rider.getElement()?.querySelector('svg');if(svg) svg.style.transform=`rotate(${st.heading}deg)`;
@@ -993,12 +1057,13 @@ function onFix(f){
 /* ---------- ナビ開始・終了 ---------- */
 async function keepAwake(){try{if('wakeLock' in navigator&&document.visibilityState==='visible') st.wake=await navigator.wakeLock.request('screen');}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(st.nav&&document.visibilityState==='visible') keepAwake();});
-function resetProgress(){st.seg=-1;st.along=0;st.off=false;st.offCnt=0;st.joined=false;st.arrived=false;st.prev=null;st.pos=null;R.turns.forEach(t=>{t.s1=t.s2=t.s3=false;});R.wps.forEach(w=>w.said=false);(R.sapa||[]).forEach(a=>{a.s1=a.s2=false;});if(doneLine)doneLine.setLatLngs([]);}
+function resetProgress(){st.seg=-1;st.along=0;st.off=false;st.offCnt=0;st.joined=false;st.arrived=false;st.prev=null;st.pos=null;st.active=0;st.still=0;st.lastT=null;st.paceLog=[];st.etaShown=null;R.turns.forEach(t=>{t.s1=t.s2=t.s3=false;});R.wps.forEach(w=>w.said=false);(R.sapa||[]).forEach(a=>{a.s1=a.s2=false;});if(doneLine)doneLine.setLatLngs([]);}
 function simTick(){
   st.simD=Math.min(R.total,st.simD+13.9);
   let i=st.simI||0;while(i<R.pts.length-2&&R.cum[i+1]<st.simD) i++;st.simI=i;
   const L2=R.cum[i+1]-R.cum[i],p=lerp(R.pts[i],R.pts[i+1],L2?(st.simD-R.cum[i])/L2:0);
-  onFix({lat:p.lat,lng:p.lng,speed:13.9,heading:brg(R.pts[i],R.pts[i+1]),acc:5});
+  st.simClock+=1000;   // シミュレーションでは1回の更新を1秒として数える（倍速でも同じ）
+  onFix({lat:p.lat,lng:p.lng,speed:13.9,heading:brg(R.pts[i],R.pts[i+1]),acc:5,t:st.simClock});
   if(st.simD>=R.total){clearInterval(st.simTimer);st.simTimer=null;}
 }
 function startSimTimer(){clearInterval(st.simTimer);st.simTimer=setInterval(simTick,1000/st.simMul);$('#simTag').textContent=`シミュレーション ×${st.simMul}`;}
@@ -1009,11 +1074,11 @@ function startNav(sim){
   st.nav=true;st.sim=sim;st.follow=true;$('#recenter').hidden=true;$('#simTag').hidden=!sim;
   if('speechSynthesis' in window){speechSynthesis.cancel();say(sim?'シミュレーションを開始します':'ナビを開始します');}
   keepAwake();
-  if(sim){st.simD=0;st.simI=0;startSimTimer();}
+  if(sim){st.simD=0;st.simI=0;st.simClock=Date.now();startSimTimer();}
   else{
     if(!('geolocation' in navigator)){showMsg('この端末では位置情報が使えません');return;}
     st.watch=navigator.geolocation.watchPosition(
-      pos=>onFix({lat:pos.coords.latitude,lng:pos.coords.longitude,speed:pos.coords.speed,heading:pos.coords.heading,acc:pos.coords.accuracy}),
+      pos=>onFix({lat:pos.coords.latitude,lng:pos.coords.longitude,speed:pos.coords.speed,heading:pos.coords.heading,acc:pos.coords.accuracy,t:pos.timestamp}),
       err=>{const m={1:'位置情報の利用が許可されていません。ブラウザの設定で許可してください',2:'現在地を取得できません。空が見える場所で試してください',3:'現在地の取得に時間がかかっています'}[err.code]||err.message;$('#mlabel').textContent=m;if(err.code===1){stopNav();openSheet();showMsg(m);}},
       {enableHighAccuracy:true,maximumAge:0,timeout:20000});
   }
@@ -1047,7 +1112,7 @@ function updateSheet(){
     b.append(nm,km);b.onclick=()=>{selectLeg(i,false);showMsg(`「${l.name}」を選びました`,true);};
     box.append(b);
   });
-  $('#sDist').textContent=(R.total/1000).toFixed(1);$('#sTurn').textContent=R.turns.length;$('#sSig').textContent=R.roads?R.signals.length:'—';$('#sWp').textContent=R.wps.length;
+  $('#sDist').textContent=(R.total/1000).toFixed(1);{const m=Math.round(tAt(R.total)/60);$('#sTime').textContent=`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`;}$('#sSig').textContent=R.roads?R.signals.length:'—';$('#sWp').textContent=R.wps.length;
   $('#revBtn').textContent=st.rev?'ルートを元の向きに':'ルートを逆向きに';
   $('#roadStat').textContent=roadMsg;$('#roadStat').className=roadState;
   $('#roadBtn').hidden=!!FILE.sample||roadState==='busy';
@@ -1079,7 +1144,7 @@ async function ensureRoads(force){
 function applyRoads(osm){
   if(!R) return;
   const out=analyzeRoads(R,osm);
-  R.roads=out.stats;R.roadsPartial=!!osm.failed;R.turns=out.turns;R.signals=out.signals;R.sapa=out.sapa;
+  R.roads=out.stats;R.roadsPartial=!!osm.failed;R.turns=out.turns;R.signals=out.signals;R.sapa=out.sapa;R.cumT=out.cumT;
   drawRoute(!st.nav);
   const s=out.stats,age=Math.round((Date.now()-(osm.at||Date.now()))/86400000);
   const part=osm.failed?`。${osm.chunks}区間中${osm.failed}区間は取得できず線の形で案内します（取り直すと補えます）`:'';
@@ -1110,13 +1175,33 @@ function loadFile(data,save){
   selectLeg(sel.leg,sel.rev);
 }
 $('#openBtn').onclick=()=>$('#file').click();
+// マイマップの共有リンク（…/maps/d/…?mid=XXXX…）から、KMLの書き出し用URLを作る
+function kmlUrlOf(s){const m=(s||'').match(/[?&]mid=([\w-]+)/);return m?`https://www.google.com/maps/d/kml?mid=${m[1]}&forcekml=1`:'';}
+const loadedMsg=()=>FILE.legs.length>1?`${FILE.legs.length}本のルートがあります。走るルートを選んでください`:'ルートを読み込みました';
+$('#mmUrl').value=store.get('mmUrl')||'';
+// Googleの書き出し用URLは他のサイトからの読み込みを許可しているので、ダウンロードせずに直接読み込める
+$('#linkBtn').onclick=async()=>{
+  const v=$('#mmUrl').value.trim(),u=kmlUrlOf(v);
+  if(!u){showMsg('リンクに「mid=…」が見つかりません。マイマップの「共有」で表示されるリンクを貼り付けてください');return;}
+  store.set('mmUrl',v);
+  const b=$('#linkBtn');b.disabled=true;showMsg('マイマップから読み込んでいます…',true);
+  try{
+    let text;
+    try{const r=await fetch(u,{cache:'no-store'});if(!r.ok) throw 0;text=await r.text();}
+    catch(e){throw new Error(navigator.onLine===false?'圏外のため読み込めません':'マイマップから読み込めませんでした。通信状態を確認してください');}
+    if(!/<kml[\s>]/.test(text)) throw new Error('KMLを取得できませんでした。マイマップの共有設定が「リンクを知っている全員」になっているか確認してください');
+    const data=parseKML(text);if(!data.title) data.title='マイマップ';
+    loadFile(data,true);showMsg(loadedMsg(),true);
+  }catch(err){showMsg(err.message||'読み込みに失敗しました');}
+  finally{b.disabled=false;}
+};
 $('#file').onchange=async e=>{
   const f=e.target.files[0];if(!f) return;
   try{
     const data=await readFile(f);
     if(!data.title) data.title=f.name.replace(/\.(kml|kmz|gpx)$/i,'');
     loadFile(data,true);
-    showMsg(FILE.legs.length>1?`${FILE.legs.length}本のルートがあります。走るルートを選んでください`:'ルートを読み込みました',true);
+    showMsg(loadedMsg(),true);
   }catch(err){showMsg(err.message||'読み込みに失敗しました');}
   e.target.value='';
 };
